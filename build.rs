@@ -62,7 +62,7 @@ fn linker_be_nice() {
 }
 
 fn add_git_info() {
-    // Try to get the short git hash (fallback to "unknown" on failure)
+    // Try to get the short git hash
     let git_short = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()
@@ -96,7 +96,6 @@ fn add_git_info() {
     println!("cargo:rustc-env=GIT_SHORT={git_short}");
     println!("cargo:rustc-env=GIT_DIRTY={git_dirty}");
 
-    // Keep using vergen to emit build timestamp (and any other vergen instructions)
     let instructions = BuildBuilder::default()
         .build_timestamp(true)
         .build()

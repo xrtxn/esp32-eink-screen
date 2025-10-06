@@ -103,9 +103,12 @@ fn add_footer_info(display: &mut Display290BlackWhite) {
     use embedded_graphics::text::{Baseline, Text};
 
     let build_date = option_env!("GIT_SHORT").unwrap_or("unknown");
-    let git_dirty = option_env!("GIT_DIRTY").unwrap_or("false");
+    let git_dirty: bool = option_env!("GIT_DIRTY")
+        .unwrap_or("false")
+        .parse()
+        .unwrap_or_default();
     let mut build_info = format!("commit: {build_date}");
-    if git_dirty.parse::<bool>().unwrap() {
+    if git_dirty {
         build_info.push_str("*");
     }
 
