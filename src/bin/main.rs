@@ -8,10 +8,10 @@
 
 use alloc::format;
 use display_interface_spi::SPIInterface;
+use embassy_executor::Spawner;
 use embedded_graphics::prelude::{Dimensions, Point};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
-use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
@@ -24,7 +24,6 @@ use esp_hal::{
 
 use log::info;
 
-use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
@@ -37,7 +36,7 @@ extern crate alloc;
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
-#[esp_hal_embassy::main]
+#[esp_rtos::main]
 async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
 
@@ -48,8 +47,8 @@ async fn main(spawner: Spawner) {
     // COEX needs more RAM - so we've added some more
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
 
-    let timer0 = SystemTimer::new(peripherals.SYSTIMER);
-    esp_hal_embassy::init(timer0.alarm0);
+    let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0);
+    esp_rtos::start(timg0.timer0);
 
     info!("Embassy initialized!");
 
