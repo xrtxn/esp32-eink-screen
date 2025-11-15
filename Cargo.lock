@@ -2073,7 +2073,6 @@ dependencies = [
 [[package]]
 name = "weact-studio-epd"
 version = "0.1.2"
-source = "git+https://github.com/thedevleon/weact-studio-epd.git?branch=feat%2F4.2_support#52a1204deab85a80f50c236d6b84cdd7f237340a"
 dependencies = [
  "display-interface",
  "embedded-graphics",

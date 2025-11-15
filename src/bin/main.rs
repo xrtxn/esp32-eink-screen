@@ -27,8 +27,8 @@ use log::info;
 use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
-use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
-use weact_studio_epd::{Color, WeActStudio420BlackWhiteDriver};
+use weact_studio_epd::graphics::{Display420TriColor, DisplayRotation};
+use weact_studio_epd::{TriColor, WeActStudio420TriColorDriver};
 
 extern crate alloc;
 
@@ -79,9 +79,9 @@ async fn main(spawner: Spawner) {
     let spi_interface = SPIInterface::new(spi_device, dc);
 
     log::info!("Intializing EPD...");
-    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
-    let mut display = Display420BlackWhite::new();
-    display.set_rotation(DisplayRotation::Rotate90);
+    let mut driver = WeActStudio420TriColorDriver::new(spi_interface, busy, rst, Delay::new());
+    let mut display = Display420TriColor::new();
+    display.set_rotation(DisplayRotation::Rotate0);
     driver.init().unwrap();
     log::info!("EPD initialized!");
 
@@ -97,7 +97,7 @@ async fn main(spawner: Spawner) {
     }
 }
 
-fn add_footer_info(display: &mut Display420BlackWhite) {
+fn add_footer_info(display: &mut Display420TriColor) {
     use embedded_graphics::mono_font::MonoTextStyle;
     use embedded_graphics::prelude::Drawable;
     use embedded_graphics::text::{Baseline, Text};
@@ -113,7 +113,7 @@ fn add_footer_info(display: &mut Display420BlackWhite) {
     }
 
     let font = profont::PROFONT_7_POINT;
-    let text_style = MonoTextStyle::new(&font, Color::Black);
+    let text_style = MonoTextStyle::new(&font, TriColor::Red);
 
     let br = display.bounding_box().bottom_right().unwrap();
 
