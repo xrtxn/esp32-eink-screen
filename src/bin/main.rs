@@ -9,7 +9,10 @@
 use alloc::format;
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
-use embedded_graphics::prelude::{Dimensions, Point};
+use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::prelude::Drawable;
+use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point};
+use embedded_graphics::text::Text;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
 use esp_hal::{
@@ -27,6 +30,7 @@ use log::info;
 use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
+use profont::PROFONT_10_POINT;
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 use weact_studio_epd::{Color, WeActStudio420BlackWhiteDriver};
 
@@ -35,6 +39,9 @@ extern crate alloc;
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
+
+const DAYS_TO_DISPLAY: u8 = 3;
+const HOURS_TO_DISPLAY: u8 = 24;
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
@@ -81,11 +88,13 @@ async fn main(spawner: Spawner) {
     log::info!("Intializing EPD...");
     let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
     let mut display = Display420BlackWhite::new();
-    display.set_rotation(DisplayRotation::Rotate0);
+    // set it to be longer not wider
+    display.set_rotation(DisplayRotation::Rotate270);
     driver.init().unwrap();
     log::info!("EPD initialized!");
 
     add_footer_info(&mut display);
+    draw_time_row_header(&mut display);
 
     driver.full_update(&display).unwrap();
 
@@ -98,8 +107,6 @@ async fn main(spawner: Spawner) {
 }
 
 fn add_footer_info(display: &mut Display420BlackWhite) {
-    use embedded_graphics::mono_font::MonoTextStyle;
-    use embedded_graphics::prelude::Drawable;
     use embedded_graphics::text::{Baseline, Text};
 
     let git_commit = option_env!("GIT_SHORT").unwrap_or("unknown");
@@ -123,4 +130,47 @@ fn add_footer_info(display: &mut Display420BlackWhite) {
     Text::with_baseline(&build_info, pos, text_style, Baseline::Top)
         .draw(display)
         .unwrap();
+}
+
+fn calculate_padding(full_size: u32, text_size: i32, item_count: i32) -> i32 {
+    info!("{} {} {}", full_size, text_size, item_count);
+    // calculate how many could fit at max
+    let s = full_size as i32 - (text_size * item_count);
+    s / item_count
+}
+
+fn calculate_left_side_width(font_size: i32) -> i32 {
+    font_size * 5
+}
+
+fn draw_time_row_header(display: &mut Display420BlackWhite) {
+    let width = display.size().width / (DAYS_TO_DISPLAY + 1) as u32;
+
+    let font = PROFONT_10_POINT;
+    let text_height = font.character_size.height as i32;
+    let mut exceeded_height: i32 = 0;
+    let mut hour = 0;
+
+    let padding = calculate_padding(display.size().height, text_height, HOURS_TO_DISPLAY as i32);
+    info!("padding: {}", padding);
+
+    let text_style = MonoTextStyle::new(&font, Color::Black);
+    let position = display.bounding_box().top_left;
+
+    while exceeded_height < display.size().height as i32 {
+        Text::with_baseline(
+            &format!("{:0>2}:00", hour),
+            position + Point::new(0, exceeded_height),
+            text_style,
+            embedded_graphics::text::Baseline::Top,
+        )
+        .draw(display)
+        .unwrap();
+        exceeded_height += text_height + padding;
+        hour += 1;
+    }
+}
+
+fn draw_base_calendar(display: &mut Display420BlackWhite) {
+
 }
