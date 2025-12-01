@@ -27,8 +27,8 @@ use log::info;
 use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
-use weact_studio_epd::graphics::{Display420TriColor, DisplayRotation};
-use weact_studio_epd::{TriColor, WeActStudio420TriColorDriver};
+use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
+use weact_studio_epd::{Color, WeActStudio420BlackWhiteDriver};
 
 extern crate alloc;
 
@@ -79,8 +79,8 @@ async fn main(spawner: Spawner) {
     let spi_interface = SPIInterface::new(spi_device, dc);
 
     log::info!("Intializing EPD...");
-    let mut driver = WeActStudio420TriColorDriver::new(spi_interface, busy, rst, Delay::new());
-    let mut display = Display420TriColor::new();
+    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
+    let mut display = Display420BlackWhite::new();
     display.set_rotation(DisplayRotation::Rotate0);
     driver.init().unwrap();
     log::info!("EPD initialized!");
@@ -97,23 +97,23 @@ async fn main(spawner: Spawner) {
     }
 }
 
-fn add_footer_info(display: &mut Display420TriColor) {
+fn add_footer_info(display: &mut Display420BlackWhite) {
     use embedded_graphics::mono_font::MonoTextStyle;
     use embedded_graphics::prelude::Drawable;
     use embedded_graphics::text::{Baseline, Text};
 
-    let build_date = option_env!("GIT_SHORT").unwrap_or("unknown");
+    let git_commit = option_env!("GIT_SHORT").unwrap_or("unknown");
     let git_dirty: bool = option_env!("GIT_DIRTY")
         .unwrap_or("false")
         .parse()
         .unwrap_or_default();
-    let mut build_info = format!("commit: {build_date}");
+    let mut build_info = format!("commit: {git_commit}");
     if git_dirty {
         build_info.push_str("*");
     }
 
     let font = profont::PROFONT_7_POINT;
-    let text_style = MonoTextStyle::new(&font, TriColor::Red);
+    let text_style = MonoTextStyle::new(&font, Color::Black);
 
     let br = display.bounding_box().bottom_right().unwrap();
 

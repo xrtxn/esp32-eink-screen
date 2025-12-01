@@ -1,9 +1,6 @@
-I have 296x128 weact-epaper module
 BUSY - 15
 RES - 4
 D/C - 18
 CS - 10
 SCL - 12
 SDA - 11
-
-it is a black_white module with no red
