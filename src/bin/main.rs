@@ -9,9 +9,10 @@
 use alloc::format;
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
-use embedded_graphics::mono_font::MonoTextStyle;
-use embedded_graphics::prelude::Drawable;
-use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point};
+use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
+use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
+use embedded_graphics::prelude::{Drawable, Primitive};
+use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
@@ -25,9 +26,8 @@ use esp_hal::{
     time::Rate,
 };
 
+use esp_println::println;
 use log::info;
-
-use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
 use profont::PROFONT_10_POINT;
@@ -42,6 +42,8 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 const DAYS_TO_DISPLAY: u8 = 3;
 const HOURS_TO_DISPLAY: u8 = 24;
+const MINUTES_IN_A_DAY: u16 = 1440;
+const EVENT_FONT: MonoFont = PROFONT_10_POINT;
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
@@ -93,17 +95,14 @@ async fn main(spawner: Spawner) {
     driver.init().unwrap();
     log::info!("EPD initialized!");
 
-    add_footer_info(&mut display);
     draw_time_row_header(&mut display);
+    // draw_base_calendar(&mut display);
+    draw_event(&mut display, 0, MINUTES_IN_A_DAY);
+    add_footer_info(&mut display);
 
     driver.full_update(&display).unwrap();
 
     let _ = spawner;
-
-    loop {
-        info!("Hello world!");
-        Timer::after(Duration::from_secs(1)).await;
-    }
 }
 
 fn add_footer_info(display: &mut Display420BlackWhite) {
@@ -139,25 +138,22 @@ fn calculate_padding(full_size: u32, text_size: i32, item_count: i32) -> i32 {
     s / item_count
 }
 
-fn calculate_left_side_width(font_size: i32) -> i32 {
-    font_size * 5
+fn calculate_left_side_width(font_size: u32, char_count: i32) -> i32 {
+    font_size as i32 * char_count
 }
 
 fn draw_time_row_header(display: &mut Display420BlackWhite) {
-    let width = display.size().width / (DAYS_TO_DISPLAY + 1) as u32;
-
-    let font = PROFONT_10_POINT;
-    let text_height = font.character_size.height as i32;
+    let text_height = EVENT_FONT.character_size.height as i32;
     let mut exceeded_height: i32 = 0;
     let mut hour = 0;
 
     let padding = calculate_padding(display.size().height, text_height, HOURS_TO_DISPLAY as i32);
     info!("padding: {}", padding);
 
-    let text_style = MonoTextStyle::new(&font, Color::Black);
+    let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
     let position = display.bounding_box().top_left;
 
-    while exceeded_height < display.size().height as i32 {
+    for _ in 0..=HOURS_TO_DISPLAY {
         Text::with_baseline(
             &format!("{:0>2}:00", hour),
             position + Point::new(0, exceeded_height),
@@ -172,5 +168,65 @@ fn draw_time_row_header(display: &mut Display420BlackWhite) {
 }
 
 fn draw_base_calendar(display: &mut Display420BlackWhite) {
+    let event_width = display.size().width / (DAYS_TO_DISPLAY + 1) as u32;
+    let start_x = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
+    let start_y = EVENT_FONT.character_size.height / 2;
 
+    let mut start_pos = Point::new(start_x, start_y as i32);
+    let mut finish_pos = Point::new(display.size().width as i32, start_pos.y);
+
+    Line::new(start_pos, finish_pos)
+        .into_styled(PrimitiveStyle::with_stroke(Color::Black, 1))
+        .draw(display)
+        .unwrap();
+}
+
+/// Calculates the starting position of the event based on the screen size
+fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
+    println!("display_height: {}", display_height);
+    let padding = calculate_padding(
+        display_height,
+        EVENT_FONT.character_size.height as i32,
+        HOURS_TO_DISPLAY as i32,
+    );
+    let offset = EVENT_FONT.character_size.height / 2;
+    // Available height for the calendar content
+    let available_height = display_height - (padding as u32 + offset);
+    // one minute in pixels
+    let one_minute = available_height as f32 / MINUTES_IN_A_DAY as f32;
+    println!("one_minute: {}", one_minute);
+    offset + (one_minute * start_minute as f32) as u32
+}
+
+fn calculate_event_width(display_width: i32, left_offset: i32) -> i32 {
+    display_width - (display_width - left_offset)
+}
+
+/// Calculates the ending position of the event based on the screen size
+fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
+    println!("display_height: {}", display_height);
+    let padding = calculate_padding(
+        display_height,
+        EVENT_FONT.character_size.height as i32,
+        HOURS_TO_DISPLAY as i32,
+    );
+    // Available height for the calendar content
+    let available_height = display_height - padding as u32;
+    // one minute in pixels
+    let one_minute = available_height as f32 / MINUTES_IN_A_DAY as f32;
+    println!("one_minute: {}", one_minute);
+    (one_minute * end_minute as f32) as u32 - EVENT_FONT.character_size.height / 2
+}
+
+fn draw_event(display: &mut Display420BlackWhite, start_minute: u16, end_minute: u16) {
+    let x = 50;
+    let y = calculate_start_height(display.size().height, start_minute);
+
+    let end_x = 50;
+    let end_y = calculate_end_height(display.size().height, end_minute);
+
+    Rectangle::new(Point::new(x, y as i32), Size::new(end_x, end_y - y))
+        .into_styled(PrimitiveStyle::with_stroke(Color::Black, 1))
+        .draw(display)
+        .unwrap();
 }
