@@ -74,8 +74,10 @@ embedded-graphics = "0.8.1"
 profont = "0.7.0"
 display-interface-spi = "0.5.0"
 embedded-hal-bus = "0.3.0"
-# reqwless = { path = "/home/xrtxn/programming/rust/thesis/reqwless/", features = ["esp-mbedtls", "log"] }
-# esp-mbedtls = { git = "https://github.com/esp-rs/esp-mbedtls.git",  features = ["esp32s3"] }
+#reqwless = { path = "/home/xrtxn/programming/rust/thesis/reqwless/", features = ["esp-mbedtls", "log"] }
+#reqwless = { git = "https://github.com/drogue-iot/reqwless.git", default-features = false, features = ["esp-mbedtls","log"] }
+reqwless = { git = "https://github.com/drogue-iot/reqwless.git", features = ["log"] }
+#esp-mbedtls = { git = "https://github.com/AnthonyGrondin/esp-mbedtls.git", branch="update/1.0.0", features = ["esp32s3"] }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }
@@ -91,5 +93,8 @@ debug            = 2
 debug-assertions = false
 incremental      = false
 lto              = 'fat'
-opt-level        = 's'
+opt-level        = 3
 overflow-checks  = false
+
+#[patch."https://github.com/esp-rs/esp-mbedtls.git"]
+#esp-mbedtls = { git = "https://github.com/AnthonyGrondin/esp-mbedtls.git", branch = "update/1.0.0" }
