@@ -1,3 +1,4 @@
+#![feature(type_alias_impl_trait)]
 #![no_std]
 #![no_main]
 #![deny(
@@ -6,17 +7,26 @@
     holding buffers for the duration of a data transfer."
 )]
 
+use alloc::borrow::ToOwned;
 use alloc::format;
-use alloc::string::ToString as _;
-use display_interface_spi::SPIInterface;
+use alloc::string::String;
 use embassy_executor::Spawner;
+use embassy_net::dns::DnsSocket;
+use embassy_net::tcp::client::TcpClient;
+use embassy_net::Stack;
+use embassy_net::{tcp::TcpSocket, StackResources};
+use embassy_time::{Duration, Timer};
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
-use embedded_hal_bus::spi::ExclusiveDevice;
+use esp32_thesis::{connection, net_task};
 use esp_hal::clock::CpuClock;
+use esp_hal::interrupt::software::SoftwareInterruptControl;
+use esp_hal::peripherals::{RSA, SHA};
+use esp_hal::rng::Rng;
+
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
@@ -26,12 +36,18 @@ use esp_hal::{
     },
     time::Rate,
 };
+use esp_mbedtls::Tls;
 
 use esp_println::println;
 use log::info;
 
 use esp_backtrace as _;
 use profont::PROFONT_10_POINT;
+use reqwless::client::{HttpClient, TlsConfig};
+use reqwless::request::RequestBuilder;
+use reqwless::{Certificates, X509};
+use smoltcp::socket::dns::DnsQuery;
+use smoltcp::wire::{DnsQueryType, DnsQuestion};
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 use weact_studio_epd::{Color, WeActStudio420BlackWhiteDriver};
 
@@ -45,6 +61,20 @@ const DAYS_TO_DISPLAY: u8 = 3;
 const HOURS_TO_DISPLAY: u8 = 24;
 const MINUTES_IN_A_DAY: u16 = 1440;
 const EVENT_FONT: MonoFont = PROFONT_10_POINT;
+const START_POS: i32 = 40;
+
+// add missing null byte
+const CERT: &[u8] = concat!(include_str!("../../cert.pem"), "\0").as_bytes();
+
+// When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
+macro_rules! mk_static {
+    ($t:ty,$val:expr) => {{
+        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
+        #[deny(unused_attributes)]
+        let x = STATIC_CELL.uninit().write(($val));
+        x
+    }};
+}
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
@@ -59,45 +89,225 @@ async fn main(spawner: Spawner) {
 
     let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
+    let sw_int =
+        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
-    info!("Embassy initialized!");
-
-    let sclk = peripherals.GPIO12;
-    let mosi = peripherals.GPIO11; // SDA -> MOSI
-
-    let spi_bus = Spi::new(
-        peripherals.SPI2,
-        Config::default()
-            .with_frequency(Rate::from_khz(100))
-            .with_mode(Mode::_0),
-    )
-    .unwrap()
-    .with_sck(sclk)
-    .with_mosi(mosi);
-
-    let dc = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
-    let rst = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
-    let busy = Input::new(
-        peripherals.GPIO15,
-        InputConfig::default().with_pull(Pull::None),
+    let radio_init = mk_static!(
+        esp_radio::Controller<'static>,
+        esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller")
     );
-    let cs = Output::new(peripherals.GPIO10, Level::High, OutputConfig::default());
+    let (mut wifi_controller, interfaces) =
+        esp_radio::wifi::new(radio_init, peripherals.WIFI, Default::default())
+            .expect("Failed to initialize Wi-Fi controller");
 
-    log::info!("Intializing SPI Device...");
-    let spi_device =
-        ExclusiveDevice::new(spi_bus, cs, Delay::new()).expect("SPI device initialize error");
-    let spi_interface = SPIInterface::new(spi_device, dc);
+    let wifi_interface = interfaces.sta;
 
-    log::info!("Intializing EPD...");
-    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
-    let mut display = Display420BlackWhite::new();
-    // set it to be longer not wider
-    display.set_rotation(DisplayRotation::Rotate270);
-    driver.init().unwrap();
-    log::info!("EPD initialized!");
+    let config = embassy_net::Config::dhcpv4(Default::default());
 
-    const START_POS: i32 = 40;
+    let rng = Rng::new();
+    let seed = (rng.random() as u64) << 32 | rng.random() as u64;
 
+    // Init network stack
+    let (stack, runner) = embassy_net::new(
+        wifi_interface,
+        config,
+        mk_static!(StackResources::<3>, StackResources::<3>::new()),
+        seed,
+    );
+
+    spawner.spawn(connection(wifi_controller)).ok();
+    spawner.spawn(net_task(runner)).ok();
+
+    loop {
+        if stack.is_link_up() {
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    println!("Waiting to get IP address...");
+    loop {
+        if let Some(config) = stack.config_v4() {
+            println!("Got IP: {}", config.address);
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    let rsa_peripherals = peripherals.RSA;
+    let sha_peripherals = peripherals.SHA;
+
+    network_req(stack, rsa_peripherals, sha_peripherals).await;
+
+    // let sclk = peripherals.GPIO12;
+    // let mosi = peripherals.GPIO11; // SDA -> MOSI
+
+    // let spi_bus = Spi::new(
+    //     peripherals.SPI2,
+    //     Config::default()
+    //         .with_frequency(Rate::from_khz(100))
+    //         .with_mode(Mode::_0),
+    // )
+    // .unwrap()
+    // .with_sck(sclk)
+    // .with_mosi(mosi);
+
+    // let dc = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
+    // let rst = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
+    // let busy = Input::new(
+    //     peripherals.GPIO15,
+    //     InputConfig::default().with_pull(Pull::None),
+    // );
+    // let cs = Output::new(peripherals.GPIO10, Level::High, OutputConfig::default());
+
+    // log::info!("Intializing SPI Device...");
+    // let spi_device =
+    //     ExclusiveDevice::new(spi_bus, cs, Delay::new()).expect("SPI device initialize error");
+    // let spi_interface = SPIInterface::new(spi_device, dc);
+
+    // log::info!("Intializing EPD...");
+    // let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
+    // let mut display = Display420BlackWhite::new();
+    // // set it to be longer not wider
+    // display.set_rotation(DisplayRotation::Rotate270);
+    // driver.init().unwrap();
+    // log::info!("EPD initialized!");
+    // // driver.full_update(&display).unwrap();
+
+    // let _ = spawner;
+}
+
+async fn network_req(
+    stack: Stack<'_>,
+    rsa_peripherial: RSA<'_>,
+    sha_peripherial: SHA<'_>,
+) -> String {
+    Timer::after(Duration::from_millis(1_000)).await;
+
+    let client_state = mk_static!(
+        embassy_net::tcp::client::TcpClientState::<1, 4096, 4096>,
+        embassy_net::tcp::client::TcpClientState::new()
+    );
+
+    let tcp_client = TcpClient::new(stack, client_state);
+    let dns_socket = DnsSocket::new(stack);
+
+    let tls = Tls::new(sha_peripherial)
+        .unwrap()
+        .with_hardware_rsa(rsa_peripherial);
+    let mut certs = Certificates::new();
+    certs.ca_chain = Some(X509::pem(CERT).unwrap());
+    let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls.reference());
+
+    let mut client = HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
+
+    let mut req_buffer = [0; 4096];
+
+    let creds = include_str!("../../passwd.txt");
+
+    let origin = creds.split('\n').nth(2).unwrap();
+
+    let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+    <d:prop>
+        <d:getetag/>
+        <c:calendar-data/>
+    </d:prop>
+    <c:filter>
+        <c:comp-filter name="VCALENDAR">
+            <c:comp-filter name="VEVENT">
+                <c:time-range start="20251222T000000" end="20251222T235959"/>
+            </c:comp-filter>
+        </c:comp-filter>
+    </c:filter>
+</c:calendar-query>"#
+        .to_owned();
+
+    let username = creds.split('\n').nth(3).unwrap();
+    let password = creds.split('\n').nth(4).unwrap();
+    let path = format!("/remote.php/dav/calendars/{}/personal/", username);
+
+    let mut request = client
+        .request(reqwless::request::Method::REPORT, &origin)
+        .await
+        .unwrap()
+        .basic_auth(username, password)
+        .path(&path)
+        .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
+        .body(body.as_bytes());
+
+    let response = request.send(&mut req_buffer).await.unwrap();
+    println!("Response status: {:?}", response.status);
+
+    let res = response.body().read_to_end().await.unwrap();
+
+    let res = match str::from_utf8(&res) {
+        Ok(v) => {
+            println!("Response body: {}", v);
+            v
+        }
+        Err(_) => {
+            println!("Response body (hex): {:02x?}", res);
+            "<invalid utf8>"
+        }
+    };
+    res.to_owned()
+}
+
+async fn parse_calendar(_data: &str) {
+
+}
+
+#[allow(dead_code)]
+async fn manual_socket(stack: Stack<'_>) {
+    let mut rx_buffer = [0; 4096];
+    let mut tx_buffer = [0; 4096];
+
+    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+
+    socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
+
+    loop {
+        let addr = stack
+            .dns_query("www.httpbin.org", DnsQueryType::A)
+            .await
+            .unwrap()[0];
+
+        println!("Resolved address: {:?}", addr);
+
+        println!("connecting...");
+        let r = socket.connect((addr, 80)).await;
+        if let Err(e) = r {
+            println!("connect error: {:?}", e);
+            continue;
+        }
+        println!("connected!");
+        let mut buf = [0; 1024];
+        loop {
+            let r = socket
+                .write(b"GET /get HTTP/1.0\r\nHost: www.httpbin.org\r\n\r\n")
+                .await;
+            if let Err(e) = r {
+                println!("write error: {:?}", e);
+                break;
+            }
+            let n = match socket.read(&mut buf).await {
+                Ok(0) => {
+                    println!("read EOF");
+                    break;
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    println!("read error: {:?}", e);
+                    break;
+                }
+            };
+            println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
+        }
+    }
+}
+
+fn add_example_events(mut display: &mut Display420BlackWhite) {
     draw_time_row_header(&mut display);
     // draw_base_calendar(&mut display);
     draw_event(&mut display, 360, 420, START_POS, 110, "Állatok etetése");
@@ -128,10 +338,6 @@ async fn main(spawner: Spawner) {
     draw_event(&mut display, 1320, 1600, START_POS, 72, "Alvás");
     //add_footer_info(&mut display);
     //draw_days(&mut display, DAYS_TO_DISPLAY);
-
-    driver.full_update(&display).unwrap();
-
-    let _ = spawner;
 }
 
 fn add_footer_info(display: &mut Display420BlackWhite) {
