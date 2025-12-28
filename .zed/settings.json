@@ -5,19 +5,32 @@
         "cargo": {
           "allTargets": false,
           "target": "xtensa-esp32s3-none-elf",
-          "extraEnv": {
-            "RUSTUP_TOOLCHAIN": "esp"
-          }
-        },
-        "server": {
-          "extraEnv": {
-            "RUSTUP_TOOLCHAIN": "stable"
+          "buildScripts": {
+            "useRustcWrapper": false
           }
         },
         "check": {
-          "extraEnv": {
-            "RUSTUP_TOOLCHAIN": "esp"
-          }
+          "command": "check",
+          "invocationLocation": "root",
+          "invocationStrategy": "once",
+          "overrideCommand": [
+            "nix",
+            "develop",
+            "--command",
+            "cargo",
+            "check",
+            "--message-format=json"
+          ]
+        },
+        "rustfmt": {
+          "overrideCommand": [
+            "nix",
+            "develop",
+            "--command",
+            "rustfmt",
+            "--edition",
+            "2021"
+          ]
         }
       }
     }
