@@ -1,0 +1,16 @@
+[
+  {
+    "label": "Test vcal-parser",
+    "command": "cargo",
+    "args": [
+      "test",
+      "-p",
+      "vcal-parser",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  }
+]

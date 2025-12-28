@@ -11,28 +11,28 @@ use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::String;
 use embassy_executor::Spawner;
+use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
-use embassy_net::Stack;
-use embassy_net::{tcp::TcpSocket, StackResources};
+use embassy_net::{StackResources, tcp::TcpSocket};
 use embassy_time::{Duration, Timer};
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
-use esp32_thesis::{connection, net_task};
 use esp_hal::clock::CpuClock;
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::peripherals::{RSA, SHA};
 use esp_hal::rng::Rng;
+use esp32_thesis::{connection, net_task};
 
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     spi::{
-        master::{Config, Spi},
         Mode,
+        master::{Config, Spi},
     },
     time::Rate,
 };
@@ -137,7 +137,8 @@ async fn main(spawner: Spawner) {
     let rsa_peripherals = peripherals.RSA;
     let sha_peripherals = peripherals.SHA;
 
-    network_req(stack, rsa_peripherals, sha_peripherals).await;
+    let cal_xml = network_req(stack, rsa_peripherals, sha_peripherals).await;
+    parse_calendar(&cal_xml).await;
 
     // let sclk = peripherals.GPIO12;
     // let mosi = peripherals.GPIO11; // SDA -> MOSI
@@ -173,8 +174,6 @@ async fn main(spawner: Spawner) {
     // driver.init().unwrap();
     // log::info!("EPD initialized!");
     // // driver.full_update(&display).unwrap();
-
-    // let _ = spawner;
 }
 
 async fn network_req(
@@ -242,20 +241,24 @@ async fn network_req(
     let res = response.body().read_to_end().await.unwrap();
 
     let res = match str::from_utf8(&res) {
-        Ok(v) => {
-            println!("Response body: {}", v);
-            v
-        }
+        Ok(v) => v,
         Err(_) => {
             println!("Response body (hex): {:02x?}", res);
-            "<invalid utf8>"
+            todo!()
         }
     };
     res.to_owned()
 }
 
 async fn parse_calendar(_data: &str) {
-
+    println!("Parsing calendar data... {:?}", _data);
+    let parsed = roxmltree::Document::parse(_data).unwrap();
+    let elem = parsed
+        .descendants()
+        .find(|n| n.has_tag_name("calendar-data"))
+        .unwrap();
+    let calendar_data = elem.text().unwrap();
+    println!("Calendar data: {:?}", calendar_data);
 }
 
 #[allow(dead_code)]

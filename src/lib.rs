@@ -21,6 +21,7 @@ pub async fn connection(mut controller: WifiController<'static>) {
             WifiStaState::Connected => {
                 // wait until we're no longer connected
                 controller.wait_for_event(WifiEvent::StaDisconnected).await;
+                println!("Disconnected, retrying...");
                 Timer::after(Duration::from_millis(5000)).await
             }
             _ => {}
