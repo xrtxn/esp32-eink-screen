@@ -10,29 +10,31 @@
 use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::String;
+use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
-use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
-use embassy_net::{StackResources, tcp::TcpSocket};
+use embassy_net::Stack;
+use embassy_net::{tcp::TcpSocket, StackResources};
 use embassy_time::{Duration, Timer};
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
+use embedded_hal_bus::spi::ExclusiveDevice;
+use esp32_thesis::{connection, net_task};
 use esp_hal::clock::CpuClock;
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::peripherals::{RSA, SHA};
 use esp_hal::rng::Rng;
-use esp32_thesis::{connection, net_task};
 
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     spi::{
-        Mode,
         master::{Config, Spi},
+        Mode,
     },
     time::Rate,
 };
@@ -140,38 +142,38 @@ async fn main(spawner: Spawner) {
     let cal_xml = network_req(stack, rsa_peripherals, sha_peripherals).await;
     parse_calendar(&cal_xml).await;
 
-    // let sclk = peripherals.GPIO12;
-    // let mosi = peripherals.GPIO11; // SDA -> MOSI
+    let sclk = peripherals.GPIO12;
+    let mosi = peripherals.GPIO11; // SDA -> MOSI
 
-    // let spi_bus = Spi::new(
-    //     peripherals.SPI2,
-    //     Config::default()
-    //         .with_frequency(Rate::from_khz(100))
-    //         .with_mode(Mode::_0),
-    // )
-    // .unwrap()
-    // .with_sck(sclk)
-    // .with_mosi(mosi);
+    let spi_bus = Spi::new(
+        peripherals.SPI2,
+        Config::default()
+            .with_frequency(Rate::from_khz(100))
+            .with_mode(Mode::_0),
+    )
+    .unwrap()
+    .with_sck(sclk)
+    .with_mosi(mosi);
 
-    // let dc = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
-    // let rst = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
-    // let busy = Input::new(
-    //     peripherals.GPIO15,
-    //     InputConfig::default().with_pull(Pull::None),
-    // );
-    // let cs = Output::new(peripherals.GPIO10, Level::High, OutputConfig::default());
+    let dc = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
+    let rst = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
+    let busy = Input::new(
+        peripherals.GPIO15,
+        InputConfig::default().with_pull(Pull::None),
+    );
+    let cs = Output::new(peripherals.GPIO10, Level::High, OutputConfig::default());
 
-    // log::info!("Intializing SPI Device...");
-    // let spi_device =
-    //     ExclusiveDevice::new(spi_bus, cs, Delay::new()).expect("SPI device initialize error");
-    // let spi_interface = SPIInterface::new(spi_device, dc);
+    log::info!("Intializing SPI Device...");
+    let spi_device =
+        ExclusiveDevice::new(spi_bus, cs, Delay::new()).expect("SPI device initialize error");
+    let spi_interface = SPIInterface::new(spi_device, dc);
 
-    // log::info!("Intializing EPD...");
-    // let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
-    // let mut display = Display420BlackWhite::new();
-    // // set it to be longer not wider
-    // display.set_rotation(DisplayRotation::Rotate270);
-    // driver.init().unwrap();
+    log::info!("Intializing EPD...");
+    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
+    let mut display = Display420BlackWhite::new();
+    // set it to be longer not wider
+    display.set_rotation(DisplayRotation::Rotate270);
+    driver.init().unwrap();
     // log::info!("EPD initialized!");
     // // driver.full_update(&display).unwrap();
 }

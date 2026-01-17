@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vcal_parser"
+name = "vcal-parser"
 version = "0.1.0"
 dependencies = [
  "nom",

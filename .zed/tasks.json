@@ -6,7 +6,7 @@
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
-    "tags": ["rust-check"]
+    "tags": ["rust-check"],
   },
   {
     "label": "Cargo Build (ESP32)",
@@ -15,7 +15,7 @@
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
-    "tags": ["rust-build"]
+    "tags": ["rust-build"],
   },
   {
     "label": "Cargo Build Release (ESP32)",
@@ -24,7 +24,7 @@
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
-    "tags": ["rust-build"]
+    "tags": ["rust-build"],
   },
   {
     "label": "Cargo Run (ESP32 Flash + Monitor)",
@@ -33,7 +33,7 @@
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
-    "tags": ["rust-run"]
+    "tags": ["rust-run"],
   },
   {
     "label": "Cargo Run Release (ESP32 Flash + Monitor)",
@@ -42,21 +42,18 @@
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
-    "tags": ["rust-run"]
+    "tags": ["rust-run"],
   },
   {
     "label": "Test vcal-parser",
     "command": "cargo",
-    "args": [
-      "test",
-      "-p",
-      "vcal-parser",
-      "--target",
-      "x86_64-unknown-linux-gnu"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT",
+    "args": ["-Zbuild-std=", "test", "--target", "x86_64-unknown-linux-gnu"],
+    "cwd": "$ZED_WORKTREE_ROOT/vcal-parser",
+    "env": {
+      "CARGO_TARGET_DIR": "target-host",
+    },
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
-    "tags": ["rust-test"]
-  }
+    "tags": ["rust-test"],
+  },
 ]
