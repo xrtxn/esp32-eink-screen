@@ -11,7 +11,6 @@
 
   outputs =
     {
-      self,
       nixpkgs,
       esp-rs-nix,
       ...
