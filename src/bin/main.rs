@@ -10,6 +10,7 @@
 use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::String;
+use alloc::vec::Vec;
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
@@ -140,7 +141,16 @@ async fn main(spawner: Spawner) {
     let sha_peripherals = peripherals.SHA;
 
     let cal_xml = network_req(stack, rsa_peripherals, sha_peripherals).await;
-    parse_calendar(&cal_xml).await;
+    let cal_strings = extract_calendar_data(&cal_xml);
+    let events: Vec<vcal_parser::VCalendar<'_>> = cal_strings
+        .iter()
+        .map(|s| vcal_parser::parse_vcalendar(s).unwrap().1)
+        .collect();
+
+    println!(
+        "Parsed: {:?}",
+        events.iter().map(|e| &e.events.get(0).unwrap().summary).collect::<Vec<_>>()
+    );
 
     let sclk = peripherals.GPIO12;
     let mosi = peripherals.GPIO11; // SDA -> MOSI
@@ -212,12 +222,14 @@ async fn network_req(
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
     <d:prop>
         <d:getetag/>
-        <c:calendar-data/>
+        <c:calendar-data>
+            <c:expand start="20260216T000000Z" end="20260216T235959Z"/>
+        </c:calendar-data>
     </d:prop>
     <c:filter>
         <c:comp-filter name="VCALENDAR">
             <c:comp-filter name="VEVENT">
-                <c:time-range start="20251222T000000" end="20251222T235959"/>
+                <c:time-range start="20260216T000000Z" end="20260216T235959"/>
             </c:comp-filter>
         </c:comp-filter>
     </c:filter>
@@ -226,7 +238,10 @@ async fn network_req(
 
     let username = creds.split('\n').nth(3).unwrap();
     let password = creds.split('\n').nth(4).unwrap();
-    let path = format!("/remote.php/dav/calendars/{}/personal/", username);
+    let path = format!(
+        "/remote.php/dav/calendars/{}/e4a2c806-b52b-43a3-828b-d97ec82f698b/",
+        username
+    );
 
     let mut request = client
         .request(reqwless::request::Method::REPORT, &origin)
@@ -252,15 +267,14 @@ async fn network_req(
     res.to_owned()
 }
 
-async fn parse_calendar(_data: &str) {
-    println!("Parsing calendar data... {:?}", _data);
-    let parsed = roxmltree::Document::parse(_data).unwrap();
-    let elem = parsed
+fn extract_calendar_data(data: &str) -> Vec<String> {
+    println!("Parsing calendar data... {:?}", data);
+    let parsed = roxmltree::Document::parse(data).unwrap();
+    parsed
         .descendants()
-        .find(|n| n.has_tag_name("calendar-data"))
-        .unwrap();
-    let calendar_data = elem.text().unwrap();
-    println!("Calendar data: {:?}", calendar_data);
+        .filter(|n| n.has_tag_name("calendar-data"))
+        .filter_map(|e| e.text().map(String::from))
+        .collect()
 }
 
 #[allow(dead_code)]

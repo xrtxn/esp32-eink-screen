@@ -1,4 +1,5 @@
 [workspace]
+resolver = "3"
 members = [
     "vcal-parser"
 ]
@@ -85,6 +86,7 @@ reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="thesis", def
 #reqwless = { git = "https://github.com/drogue-iot/reqwless.git", rev="311060f9dcfe065941fa224139786fe3c205e71b", features = ["log"] }
 esp-mbedtls = { git = "https://github.com/AnthonyGrondin/esp-mbedtls.git", branch="update/1.0.0", features = ["esp32s3"] }
 roxmltree = { version = "0.21.1", default-features = false }
+vcal-parser = { path = "./vcal-parser" }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }
