@@ -31,6 +31,7 @@ embassy-net = { version = "0.7.1", features = [
   "dhcpv4",
   "log",
   "tcp",
+  "udp",
   "dns"
 ] }
 embedded-io = "0.7.1"
@@ -87,6 +88,9 @@ reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="thesis", def
 esp-mbedtls = { git = "https://github.com/AnthonyGrondin/esp-mbedtls.git", branch="update/1.0.0", features = ["esp32s3"] }
 roxmltree = { version = "0.21.1", default-features = false }
 vcal-parser = { path = "./vcal-parser" }
+time = { version = "0.3.47", default-features = false, features = ["parsing", "alloc"] }
+sntpc = { version = "0.7.0", default-features = false, features = ["embassy-socket"] }
+heapless = "0.9.2"
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

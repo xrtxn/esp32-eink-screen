@@ -11,6 +11,8 @@ use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt::Write;
+use core::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
@@ -50,7 +52,9 @@ use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use reqwless::{Certificates, X509};
 use smoltcp::socket::dns::DnsQuery;
+use smoltcp::socket::udp::Socket;
 use smoltcp::wire::{DnsQueryType, DnsQuestion};
+use time::format_description;
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 use weact_studio_epd::{Color, WeActStudio420BlackWhiteDriver};
 
@@ -140,7 +144,9 @@ async fn main(spawner: Spawner) {
     let rsa_peripherals = peripherals.RSA;
     let sha_peripherals = peripherals.SHA;
 
-    let cal_xml = network_req(stack, rsa_peripherals, sha_peripherals).await;
+    let time = get_time(stack).await;
+
+    let cal_xml = network_req(stack, rsa_peripherals, sha_peripherals, time.date()).await;
     let cal_strings = extract_calendar_data(&cal_xml);
     let events: Vec<vcal_parser::VCalendar<'_>> = cal_strings
         .iter()
@@ -149,7 +155,10 @@ async fn main(spawner: Spawner) {
 
     println!(
         "Parsed: {:?}",
-        events.iter().map(|e| &e.events.get(0).unwrap().summary).collect::<Vec<_>>()
+        events
+            .iter()
+            .map(|e| &e.events.get(0).unwrap().summary)
+            .collect::<Vec<_>>()
     );
 
     let sclk = peripherals.GPIO12;
@@ -188,12 +197,81 @@ async fn main(spawner: Spawner) {
     // // driver.full_update(&display).unwrap();
 }
 
+#[derive(Copy, Clone, Default)]
+struct Timestamp {
+    duration: time::Duration,
+}
+
+impl sntpc::NtpTimestampGenerator for Timestamp {
+    fn init(&mut self) {
+        self.duration = time::Duration::new(0, 0);
+    }
+
+    fn timestamp_sec(&self) -> u64 {
+        self.duration.as_seconds_f32() as u64
+    }
+
+    fn timestamp_subsec_micros(&self) -> u32 {
+        self.duration.subsec_microseconds() as u32
+    }
+}
+
+async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
+    use embassy_net::udp::UdpSocket;
+    use sntpc::{get_time, NtpContext};
+
+    let mut rx_meta = [embassy_net::udp::PacketMetadata::EMPTY; 16];
+    let mut rx_buffer = [0; 4096];
+    let mut tx_meta = [embassy_net::udp::PacketMetadata::EMPTY; 16];
+    let mut tx_buffer = [0; 4096];
+
+    // Within an Embassy async context
+    let mut socket = UdpSocket::new(
+        stack,
+        &mut rx_meta,
+        &mut rx_buffer,
+        &mut tx_meta,
+        &mut tx_buffer,
+    );
+    socket.bind(123).unwrap();
+    let context = NtpContext::new(Timestamp::default());
+
+    let ip = match stack
+        .dns_query("pool.ntp.org", DnsQueryType::A)
+        .await
+        .unwrap()
+        .get(0)
+        .unwrap()
+    {
+        embassy_net::IpAddress::Ipv4(ipv4_addr) => ipv4_addr.clone(),
+    };
+
+    let result = get_time(SocketAddr::V4(SocketAddrV4::new(ip, 123)), &socket, context)
+        .await
+        .unwrap();
+    let time = time::UtcDateTime::from_unix_timestamp(result.seconds.into()).unwrap();
+    println!("Current time: {:?}", time);
+    time
+}
+
 async fn network_req(
     stack: Stack<'_>,
     rsa_peripherial: RSA<'_>,
     sha_peripherial: SHA<'_>,
+    date: time::Date,
 ) -> String {
     Timer::after(Duration::from_millis(1_000)).await;
+    let mut fmt_date = heapless::String::<8>::new();
+
+    // We format directly into the stack-allocated string
+    // This avoids all dynamic memory allocation
+    let _ = write!(
+        fmt_date,
+        "{}{:02}{:02}",
+        date.year(),
+        date.month() as u8,
+        date.day()
+    );
 
     let client_state = mk_static!(
         embassy_net::tcp::client::TcpClientState::<1, 4096, 4096>,
@@ -218,23 +296,25 @@ async fn network_req(
 
     let origin = creds.split('\n').nth(2).unwrap();
 
-    let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+    let body = format!(
+        r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
     <d:prop>
         <d:getetag/>
         <c:calendar-data>
-            <c:expand start="20260216T000000Z" end="20260216T235959Z"/>
+            <c:expand start="{}T000000Z" end="{}T235959Z"/>
         </c:calendar-data>
     </d:prop>
     <c:filter>
         <c:comp-filter name="VCALENDAR">
             <c:comp-filter name="VEVENT">
-                <c:time-range start="20260216T000000Z" end="20260216T235959"/>
+                <c:time-range start="{}T000000Z" end="{}T235959"/>
             </c:comp-filter>
         </c:comp-filter>
     </c:filter>
-</c:calendar-query>"#
-        .to_owned();
+</c:calendar-query>"#,
+        fmt_date, fmt_date, fmt_date, fmt_date
+    );
 
     let username = creds.split('\n').nth(3).unwrap();
     let password = creds.split('\n').nth(4).unwrap();
@@ -268,62 +348,12 @@ async fn network_req(
 }
 
 fn extract_calendar_data(data: &str) -> Vec<String> {
-    println!("Parsing calendar data... {:?}", data);
     let parsed = roxmltree::Document::parse(data).unwrap();
     parsed
         .descendants()
         .filter(|n| n.has_tag_name("calendar-data"))
         .filter_map(|e| e.text().map(String::from))
         .collect()
-}
-
-#[allow(dead_code)]
-async fn manual_socket(stack: Stack<'_>) {
-    let mut rx_buffer = [0; 4096];
-    let mut tx_buffer = [0; 4096];
-
-    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-
-    socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
-
-    loop {
-        let addr = stack
-            .dns_query("www.httpbin.org", DnsQueryType::A)
-            .await
-            .unwrap()[0];
-
-        println!("Resolved address: {:?}", addr);
-
-        println!("connecting...");
-        let r = socket.connect((addr, 80)).await;
-        if let Err(e) = r {
-            println!("connect error: {:?}", e);
-            continue;
-        }
-        println!("connected!");
-        let mut buf = [0; 1024];
-        loop {
-            let r = socket
-                .write(b"GET /get HTTP/1.0\r\nHost: www.httpbin.org\r\n\r\n")
-                .await;
-            if let Err(e) = r {
-                println!("write error: {:?}", e);
-                break;
-            }
-            let n = match socket.read(&mut buf).await {
-                Ok(0) => {
-                    println!("read EOF");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    println!("read error: {:?}", e);
-                    break;
-                }
-            };
-            println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
-        }
-    }
 }
 
 fn add_example_events(mut display: &mut Display420BlackWhite) {
