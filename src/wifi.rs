@@ -1,6 +1,3 @@
-#![no_std]
-#![no_main]
-
 use embassy_net::Runner;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
@@ -14,7 +11,6 @@ use esp_backtrace as _;
 
 #[embassy_executor::task]
 pub async fn connection(mut controller: WifiController<'static>) {
-    println!("start connection task");
     println!("Device capabilities: {:?}", controller.capabilities());
     loop {
         match esp_radio::wifi::sta_state() {
@@ -40,14 +36,16 @@ pub async fn connection(mut controller: WifiController<'static>) {
             controller.start_async().await.unwrap();
             println!("Wifi started!");
 
-            println!("Scan");
             let scan_config = ScanConfig::default().with_max(10);
             let result = controller
                 .scan_with_config_async(scan_config)
                 .await
                 .unwrap();
-            for ap in result {
-                println!("{:?}", ap);
+            if result.iter().any(|f| f.ssid == ssid) {
+                println!("Target SSID found!");
+            } else {
+                println!("SSID not found, retrying...");
+                Timer::after(Duration::from_millis(5000)).await
             }
         }
         println!("About to connect...");

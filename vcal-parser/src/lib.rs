@@ -14,12 +14,12 @@ use std::string::String;
 use std::vec::Vec;
 
 use nom::{
+    IResult, Parser,
     bytes::complete::{tag, take_while1},
     character::complete::{char, line_ending, not_line_ending},
     combinator::opt,
     multi::many0,
     sequence::{preceded, separated_pair},
-    IResult, Parser,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -582,7 +582,9 @@ END:VCALENDAR\r\n";
         assert_eq!(cal.events.len(), 1);
         assert_eq!(
             cal.events[0].description,
-            Some("This is a very long description that has been folded across multiple lines for readability.")
+            Some(
+                "This is a very long description that has been folded across multiple lines for readability."
+            )
         );
     }
 
