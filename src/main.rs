@@ -161,17 +161,11 @@ async fn main(spawner: Spawner) {
     display::draw_time_row_header(&mut display);
     for event in events {
         for eevent in event.events {
-            let datetime = parse_date(eevent.dtstart.unwrap().value);
-            let end_datetime = parse_date(eevent.dtend.unwrap().value);
-            println!(
-                "Event: {}, start: {}, end: {}",
-                eevent.summary.unwrap(),
-                datetime.hour(),
-                end_datetime
-            );
-
-            let start_minute = date_to_mins(datetime);
-            let end_minute = date_to_mins(end_datetime);
+            let tz_offset = time::UtcOffset::from_hms(1, 0, 0).unwrap();
+            let start_dt = time::OffsetDateTime::to_offset(eevent.dtstart.unwrap(), tz_offset);
+            let end_dt = time::OffsetDateTime::to_offset(eevent.dtend.unwrap(), tz_offset);
+            let start_minute = date_to_mins(start_dt);
+            let end_minute = date_to_mins(end_dt);
             println!(
                 "Event: {}, start_minute: {}, end_minute: {}",
                 eevent.summary.unwrap_or_else(|| "No summary"),
@@ -197,14 +191,6 @@ fn extract_calendar_data(data: &str) -> Vec<String> {
         .filter(|n| n.has_tag_name("calendar-data"))
         .filter_map(|e| e.text().map(String::from))
         .collect()
-}
-
-// todo get current tz
-fn parse_date(dt: &str) -> time::OffsetDateTime {
-    use time::format_description::well_known::Iso8601;
-    let parsed = time::OffsetDateTime::parse(dt, &Iso8601::DEFAULT).unwrap();
-    println!("Parsed date: {:?}", parsed);
-    parsed.to_offset(UtcOffset::from_hms(1, 0, 0).unwrap())
 }
 
 fn date_to_mins(dt: OffsetDateTime) -> u16 {

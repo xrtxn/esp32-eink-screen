@@ -3283,7 +3283,10 @@ dependencies = [
 name = "vcal-parser"
 version = "0.1.0"
 dependencies = [
+ "heapless 0.9.2",
+ "log",
  "nom 8.0.0",
+ "time",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@ extern crate alloc;
 use alloc::string::String;
 #[cfg(not(test))]
 use alloc::vec::Vec;
+use time::OffsetDateTime;
 
 #[cfg(test)]
 use std::string::String;
@@ -14,12 +15,12 @@ use std::string::String;
 use std::vec::Vec;
 
 use nom::{
-    IResult, Parser,
     bytes::complete::{tag, take_while1},
     character::complete::{char, line_ending, not_line_ending},
     combinator::opt,
     multi::many0,
     sequence::{preceded, separated_pair},
+    IResult, Parser,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,8 +37,8 @@ pub struct VEvent<'a> {
     pub summary: Option<&'a str>,
     pub description: Option<&'a str>,
     pub location: Option<&'a str>,
-    pub dtstart: Option<DateTime<'a>>,
-    pub dtend: Option<DateTime<'a>>,
+    pub dtstart: Option<OffsetDateTime>,
+    pub dtend: Option<OffsetDateTime>,
     pub dtstamp: Option<&'a str>,
     pub status: Option<&'a str>,
     pub rrule: Option<&'a str>,
@@ -52,10 +53,9 @@ pub struct VEvent<'a> {
     pub alarms: Vec<VAlarm<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct DateTime<'a> {
-    pub value: &'a str,
-    pub tzid: Option<&'a str>,
+fn parse_date(dt: &str) -> time::OffsetDateTime {
+    use time::format_description::well_known::Iso8601;
+    time::OffsetDateTime::parse(dt, &Iso8601::DEFAULT).unwrap()
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -173,17 +173,13 @@ fn end_component<'a>(input: &'a str, name: &'static str) -> IResult<&'a str, ()>
     Ok((input, ()))
 }
 
-/// Extract TZID from parameters
-fn extract_tzid<'a>(params: &[(&'a str, &'a str)]) -> Option<&'a str> {
-    params.iter().find(|(k, _)| *k == "TZID").map(|(_, v)| *v)
-}
-
 /// Create a DateTime from a property
-fn make_datetime<'a>(prop: &Property<'a>) -> DateTime<'a> {
-    DateTime {
-        value: prop.value,
-        tzid: extract_tzid(&prop.params),
-    }
+fn make_datetime<'a>(prop: &Property<'a>) -> OffsetDateTime {
+    log::trace!("Creating datetime from property: {:?}", prop);
+    let mut s: heapless::String<16> = heapless::String::new();
+    s.push_str(&prop.value)
+        .expect("Value too long for heapless string");
+    parse_date(&s)
 }
 
 fn parse_valarm(input: &str) -> IResult<&str, VAlarm<'_>> {
