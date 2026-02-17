@@ -114,10 +114,6 @@ pub async fn network_req(
 
     let mut req_buffer = [0; 8192];
 
-    let creds = include_str!("../passwd.txt");
-
-    let origin = creds.split('\n').nth(2).unwrap();
-
     let body: heapless::String<553> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
@@ -142,8 +138,9 @@ pub async fn network_req(
     )
     .unwrap();
 
-    let username = creds.split('\n').nth(3).unwrap();
-    let password = creds.split('\n').nth(4).unwrap();
+    let origin = option_env!("ORIGIN").unwrap();
+    let username = option_env!("CALDAV_USER").unwrap();
+    let password = option_env!("CALDAV_PASS").unwrap();
     // 64 long uid + max 64 long username
     let path: heapless::String<128> =
         heapless::format!("/remote.php/dav/calendars/{}/{}/", username, CALENDAR_ID).unwrap();

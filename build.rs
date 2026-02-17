@@ -1,3 +1,4 @@
+use std::env;
 use std::process::Command;
 use vergen::{BuildBuilder, Emitter};
 
@@ -8,6 +9,7 @@ fn main() {
     println!("cargo:rerun-if-changed=.git/refs");
     println!("cargo:rerun-if-changed=.git/index");
 
+    load_env();
     add_git_info();
     linker_be_nice();
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
@@ -106,4 +108,26 @@ fn add_git_info() {
         .unwrap()
         .emit()
         .unwrap();
+}
+
+fn load_env() {
+    dotenvy::dotenv().expect("Failed to read .env file");
+
+    println!("cargo:rerun-if-changed=.env");
+
+    if let Ok(val) = env::var("WIFI_SSID") {
+        println!("cargo:rustc-env=WIFI_SSID={}", val);
+    }
+    if let Ok(val) = env::var("WIFI_PASS") {
+        println!("cargo:rustc-env=WIFI_PASS={}", val);
+    }
+    if let Ok(val) = env::var("ORIGIN") {
+        println!("cargo:rustc-env=ORIGIN={}", val);
+    }
+    if let Ok(val) = env::var("CALDAV_USER") {
+        println!("cargo:rustc-env=CALDAV_USER={}", val);
+    }
+    if let Ok(val) = env::var("CALDAV_PASS") {
+        println!("cargo:rustc-env=CALDAV_PASS={}", val);
+    }
 }

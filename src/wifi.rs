@@ -23,14 +23,16 @@ pub async fn connection(mut controller: WifiController<'static>) {
             }
             _ => {}
         }
-        let ssid = include_str!("../passwd.txt").split('\n').nth(0).unwrap();
-        let password = include_str!("../passwd.txt").split('\n').nth(1).unwrap();
+
+        let ssid = option_env!("WIFI_SSID").unwrap();
 
         if !matches!(controller.is_started(), Ok(true)) {
             let station_config = ModeConfig::Client(
                 ClientConfig::default()
-                    .with_ssid(ssid.into())
-                    .with_password(password.into()),
+                    .with_ssid(alloc::string::String::from(ssid))
+                    .with_password(alloc::string::String::from(
+                        option_env!("WIFI_PASS").unwrap(),
+                    )),
             );
             controller.set_config(&station_config).unwrap();
             println!("Starting wifi");

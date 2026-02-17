@@ -16,3 +16,4 @@ target/
 #.idea/
 /passwd.txt
 /.direnv
+**/*.env
