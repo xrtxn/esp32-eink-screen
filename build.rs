@@ -64,7 +64,7 @@ fn linker_be_nice() {
 fn add_git_info() {
     // Try to get the short git hash
     let git_short = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short=8", "HEAD"])
         .output()
         .ok()
         .and_then(|o| {

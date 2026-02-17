@@ -1,14 +1,10 @@
-use alloc::borrow::ToOwned;
-use alloc::format;
-use alloc::string::String;
 use core::fmt::Write;
 use core::net::{SocketAddr, SocketAddrV4};
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::Stack;
-use static_cell::StaticCell;
-use embassy_time::{Duration, Timer};
 use esp_hal::peripherals::{RSA, SHA};
+use static_cell::StaticCell;
 
 use esp_mbedtls::Tls;
 
@@ -22,6 +18,8 @@ use smoltcp::wire::DnsQueryType;
 
 // add missing null byte
 const NEXTCLOUD_CERT: &[u8] = concat!(include_str!("../cert.pem"), "\0").as_bytes();
+const CALENDAR_ID: &str = "szakdoga-teszt";
+const TOTAL_VCAL_BUFFER: usize = crate::MAX_DAILY_EVENTS * crate::MAX_VCALENDAR_BYTES;
 
 static CLIENT_STATE: StaticCell<embassy_net::tcp::client::TcpClientState<1, 4096, 4096>> =
     StaticCell::new();
@@ -88,12 +86,9 @@ pub async fn network_req(
     rsa_peripherial: RSA<'_>,
     sha_peripherial: SHA<'_>,
     date: time::Date,
-) -> String {
-    Timer::after(Duration::from_millis(1_000)).await;
+) -> heapless::String<TOTAL_VCAL_BUFFER> {
     let mut fmt_date = heapless::String::<8>::new();
 
-    // We format directly into the stack-allocated string
-    // This avoids all dynamic memory allocation
     let _ = write!(
         fmt_date,
         "{}{:02}{:02}",
@@ -102,8 +97,10 @@ pub async fn network_req(
         date.day()
     );
 
-    let tcp_client =
-        TcpClient::new(stack, CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()));
+    let tcp_client = TcpClient::new(
+        stack,
+        CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
+    );
     let dns_socket = DnsSocket::new(stack);
 
     let tls = Tls::new(sha_peripherial)
@@ -115,13 +112,13 @@ pub async fn network_req(
 
     let mut client = HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
 
-    let mut req_buffer = [0; 4096];
+    let mut req_buffer = [0; 8192];
 
     let creds = include_str!("../passwd.txt");
 
     let origin = creds.split('\n').nth(2).unwrap();
 
-    let body = format!(
+    let body: heapless::String<553> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
     <d:prop>
@@ -138,15 +135,18 @@ pub async fn network_req(
         </c:comp-filter>
     </c:filter>
 </c:calendar-query>"#,
-        fmt_date, fmt_date, fmt_date, fmt_date
-    );
+        fmt_date,
+        fmt_date,
+        fmt_date,
+        fmt_date
+    )
+    .unwrap();
 
     let username = creds.split('\n').nth(3).unwrap();
     let password = creds.split('\n').nth(4).unwrap();
-    let path = format!(
-        "/remote.php/dav/calendars/{}/e4a2c806-b52b-43a3-828b-d97ec82f698b/",
-        username
-    );
+    // 64 long uid + max 64 long username
+    let path: heapless::String<128> =
+        heapless::format!("/remote.php/dav/calendars/{}/{}/", username, CALENDAR_ID).unwrap();
 
     let mut request = client
         .request(reqwless::request::Method::REPORT, &origin)
@@ -169,5 +169,5 @@ pub async fn network_req(
             todo!()
         }
     };
-    res.to_owned()
+    heapless::String::try_from(res).unwrap()
 }

@@ -1,10 +1,10 @@
-use alloc::format;
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
 use esp_println::println;
+use heapless::format;
 use log::info;
 use profont::PROFONT_10_POINT;
 use weact_studio_epd::graphics::Display420BlackWhite;
@@ -41,12 +41,13 @@ pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
 
     let git_commit = option_env!("GIT_SHORT").unwrap_or("unknown");
     let git_dirty: bool = option_env!("GIT_DIRTY")
-        .unwrap_or("false")
+        .unwrap_or_else(|| "false")
         .parse()
-        .unwrap_or_default();
-    let mut build_info = format!("commit: {git_commit}");
+        .unwrap_or_else(|_| false);
+    // 8 is the text + 8 is short hash in build.rs + 1 is possible *
+    let mut build_info: heapless::String<17> = format!("commit: {git_commit}").unwrap();
     if git_dirty {
-        build_info.push_str("*");
+        build_info.push_str("*").unwrap();
     }
 
     let font = profont::PROFONT_7_POINT;
@@ -89,8 +90,9 @@ pub(crate) fn draw_time_row_header(display: &mut Display420BlackWhite) {
     let position = display.bounding_box().top_left;
 
     for hour in START_DISPLAY_HOUR..=HOURS_TO_DISPLAY {
+        let fmt_hour: heapless::String<5> = format!("{:0>2}:00", hour).unwrap();
         Text::with_baseline(
-            &format!("{:0>2}:00", hour),
+            &fmt_hour,
             position + Point::new(0, exceeded_height),
             text_style,
             embedded_graphics::text::Baseline::Top,
@@ -188,6 +190,7 @@ pub(crate) fn draw_event(
 
     info!("max_chars_per_line: {}", max_chars_per_line);
 
+    //todo use heapless
     let mut wrapped_text = alloc::string::String::new();
     let mut current_line_len = 0;
 
@@ -232,7 +235,9 @@ fn draw_days(display: &mut Display420BlackWhite, count: u8) {
             0 => "Today",
             1 => "Tomorrow",
             2 => "Overmorrow",
-            _ => &format!("Day {}", day),
+            _ => {
+                todo!()
+            }
         };
         x_offset += day_text.chars().count() as i32 * EVENT_FONT.character_size.width as i32 + 15;
         let pos = Point::new(starting_x + x_offset, y as i32);

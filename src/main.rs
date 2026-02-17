@@ -11,8 +11,6 @@ mod display;
 mod networking;
 mod wifi;
 
-use alloc::string::String;
-use alloc::vec::Vec;
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
 use embassy_net::StackResources;
@@ -31,7 +29,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use static_cell::StaticCell;
-use time::{OffsetDateTime, UtcOffset};
+use time::OffsetDateTime;
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
@@ -40,6 +38,10 @@ use esp_backtrace as _;
 use crate::display::{add_footer_info, draw_event};
 
 extern crate alloc;
+
+// This is one event every half our
+pub const MAX_DAILY_EVENTS: usize = 16;
+pub const MAX_VCALENDAR_BYTES: usize = 2000;
 
 static NETWORK_STACK: StaticCell<StackResources<3>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
@@ -111,8 +113,9 @@ async fn main(spawner: Spawner) {
 
     let cal_xml =
         networking::network_req(stack, rsa_peripherals, sha_peripherals, time.date()).await;
+    println!("Received calendar data len: {}", cal_xml.len());
     let cal_strings = extract_calendar_data(&cal_xml);
-    let events: Vec<vcal_parser::VCalendar<'_>> = cal_strings
+    let events: heapless::Vec<vcal_parser::VCalendar<'_>, MAX_DAILY_EVENTS> = cal_strings
         .iter()
         .map(|s| vcal_parser::parse_vcalendar(s).unwrap().1)
         .collect();
@@ -122,7 +125,7 @@ async fn main(spawner: Spawner) {
         events
             .iter()
             .map(|e| &e.events.get(0).unwrap().summary)
-            .collect::<Vec<_>>()
+            .collect::<heapless::Vec<_, MAX_DAILY_EVENTS>>()
     );
 
     let sclk = peripherals.GPIO12;
@@ -184,12 +187,20 @@ async fn main(spawner: Spawner) {
     driver.full_update(&display).unwrap();
 }
 
-fn extract_calendar_data(data: &str) -> Vec<String> {
+// this is overkill but may be necessary
+fn extract_calendar_data(
+    data: &str,
+) -> heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS> {
     let parsed = roxmltree::Document::parse(data).unwrap();
     parsed
         .descendants()
         .filter(|n| n.has_tag_name("calendar-data"))
-        .filter_map(|e| e.text().map(String::from))
+        .filter_map(|e| {
+            e.text().map(|t| {
+                heapless::String::try_from(t)
+                    .expect("Unable to store calendar data into heapless string")
+            })
+        })
         .collect()
 }
 
