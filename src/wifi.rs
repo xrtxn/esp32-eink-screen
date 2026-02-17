@@ -8,6 +8,7 @@ use esp_radio::wifi::{
 };
 
 use esp_backtrace as _;
+use log::{info, warn};
 
 #[embassy_executor::task]
 pub async fn connection(mut controller: WifiController<'static>) {
@@ -37,16 +38,22 @@ pub async fn connection(mut controller: WifiController<'static>) {
             println!("Wifi started!");
 
             let scan_config = ScanConfig::default().with_max(10);
-            let result = controller
-                .scan_with_config_async(scan_config)
-                .await
-                .unwrap();
-            if result.iter().any(|f| f.ssid == ssid) {
-                println!("Target SSID found!");
-            } else {
-                println!("SSID not found, retrying...");
-                Timer::after(Duration::from_millis(5000)).await
+
+            loop {
+                let results = controller
+                    .scan_with_config_async(scan_config)
+                    .await
+                    .unwrap();
+
+                if results.iter().any(|f| f.ssid == ssid) {
+                    break;
+                }
+
+                warn!("Target SSID not found, retrying...");
+                Timer::after(Duration::from_millis(2000)).await;
             }
+
+            info!("Target SSID found!");
         }
         println!("About to connect...");
 

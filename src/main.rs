@@ -31,10 +31,13 @@ use esp_hal::{
 };
 use esp_println::println;
 use static_cell::StaticCell;
+use time::{OffsetDateTime, UtcOffset};
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
 use esp_backtrace as _;
+
+use crate::display::{add_footer_info, draw_event};
 
 extern crate alloc;
 
@@ -154,8 +157,37 @@ async fn main(spawner: Spawner) {
     // set it to be longer not wider
     display.set_rotation(DisplayRotation::Rotate270);
     driver.init().unwrap();
-    // log::info!("EPD initialized!");
-    // // driver.full_update(&display).unwrap();
+    log::info!("EPD initialized!");
+    display::draw_time_row_header(&mut display);
+    for event in events {
+        for eevent in event.events {
+            let datetime = parse_date(eevent.dtstart.unwrap().value);
+            let end_datetime = parse_date(eevent.dtend.unwrap().value);
+            println!(
+                "Event: {}, start: {}, end: {}",
+                eevent.summary.unwrap(),
+                datetime.hour(),
+                end_datetime
+            );
+
+            let start_minute = date_to_mins(datetime);
+            let end_minute = date_to_mins(end_datetime);
+            println!(
+                "Event: {}, start_minute: {}, end_minute: {}",
+                eevent.summary.unwrap_or_else(|| "No summary"),
+                start_minute,
+                end_minute
+            );
+            draw_event(
+                &mut display,
+                start_minute,
+                end_minute,
+                eevent.summary.unwrap_or_else(|| "No summary"),
+            );
+        }
+    }
+    add_footer_info(&mut display);
+    driver.full_update(&display).unwrap();
 }
 
 fn extract_calendar_data(data: &str) -> Vec<String> {
@@ -165,4 +197,16 @@ fn extract_calendar_data(data: &str) -> Vec<String> {
         .filter(|n| n.has_tag_name("calendar-data"))
         .filter_map(|e| e.text().map(String::from))
         .collect()
+}
+
+// todo get current tz
+fn parse_date(dt: &str) -> time::OffsetDateTime {
+    use time::format_description::well_known::Iso8601;
+    let parsed = time::OffsetDateTime::parse(dt, &Iso8601::DEFAULT).unwrap();
+    println!("Parsed date: {:?}", parsed);
+    parsed.to_offset(UtcOffset::from_hms(1, 0, 0).unwrap())
+}
+
+fn date_to_mins(dt: OffsetDateTime) -> u16 {
+    dt.hour() as u16 * 60 + dt.minute() as u16
 }

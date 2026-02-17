@@ -11,45 +11,32 @@ use weact_studio_epd::graphics::Display420BlackWhite;
 use weact_studio_epd::Color;
 
 const DAYS_TO_DISPLAY: u8 = 3;
+const START_DISPLAY_HOUR: u8 = 0;
 const HOURS_TO_DISPLAY: u8 = 24;
 const MINUTES_IN_A_DAY: u16 = 1440;
 const EVENT_FONT: MonoFont = PROFONT_10_POINT;
 const START_POS: i32 = 40;
 
-fn add_example_events(mut display: &mut Display420BlackWhite) {
+pub(crate) fn add_example_events(mut display: &mut Display420BlackWhite) {
     draw_time_row_header(&mut display);
     // draw_base_calendar(&mut display);
-    draw_event(&mut display, 360, 420, START_POS, 110, "Állatok etetése");
-    draw_event(&mut display, 420, 480, START_POS, 60, "Reggeli");
-    draw_event(
-        &mut display,
-        480,
-        720,
-        40,
-        70,
-        "Formális nyelvek, automaták",
-    );
-    draw_event(&mut display, 720, 860, START_POS, 85, "IoT technológia");
-    draw_event(&mut display, 760, 860, 125, 72, "5-ös jegy");
-    draw_event(&mut display, 760, 860, 125, 72, "5-ös jegy");
-    draw_event(&mut display, 860, 920, START_POS, 36, "Ebéd");
-    draw_event(&mut display, 920, 1030, START_POS, 50, "Pihenés");
-    draw_event(&mut display, 960, 1030, 90, 45, "Alvás");
-    draw_event(&mut display, 1080, 1140, START_POS, 72, "Vacsora");
-    draw_event(
-        &mut display,
-        1140,
-        1260,
-        START_POS,
-        100,
-        "Liverpool - FC Barcelona",
-    );
-    draw_event(&mut display, 1320, 1600, START_POS, 72, "Alvás");
-    //add_footer_info(&mut display);
+    draw_event(&mut display, 360, 420, "Állatok etetése");
+    draw_event(&mut display, 420, 480, "Reggeli");
+    draw_event(&mut display, 480, 720, "Formális nyelvek, automaták");
+    draw_event(&mut display, 720, 860, "IoT technológia");
+    draw_event(&mut display, 760, 860, "5-ös jegy");
+    draw_event(&mut display, 760, 860, "5-ös jegy");
+    draw_event(&mut display, 860, 920, "Ebéd");
+    draw_event(&mut display, 920, 1030, "Pihenés");
+    draw_event(&mut display, 960, 1030, "Alvás");
+    draw_event(&mut display, 1080, 1140, "Vacsora");
+    draw_event(&mut display, 1140, 1260, "Liverpool - FC Barcelona");
+    draw_event(&mut display, 1320, 1600, "Alvás");
+    add_footer_info(&mut display);
     //draw_days(&mut display, DAYS_TO_DISPLAY);
 }
 
-fn add_footer_info(display: &mut Display420BlackWhite) {
+pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
     use embedded_graphics::text::{Baseline, Text};
 
     let git_commit = option_env!("GIT_SHORT").unwrap_or("unknown");
@@ -76,32 +63,32 @@ fn add_footer_info(display: &mut Display420BlackWhite) {
 }
 
 fn calculate_padding(full_size: u32, text_size: i32, item_count: i32) -> i32 {
-    // calculate how many could fit at max
-    let s = full_size as i32 - (text_size * item_count);
-    s / item_count
+    if item_count <= 0 {
+        return 0;
+    }
+
+    let total_text_size = text_size * item_count;
+    let remaining_space = full_size as i32 - total_text_size;
+
+    // 3. Divide space by the number of gaps (item_count + 1 for edges)
+    remaining_space / (item_count + 1)
 }
 
 fn calculate_left_side_width(font_size: u32, char_count: i32) -> i32 {
     font_size as i32 * char_count
 }
 
-fn draw_time_row_header(display: &mut Display420BlackWhite) {
+pub(crate) fn draw_time_row_header(display: &mut Display420BlackWhite) {
     let text_height = EVENT_FONT.character_size.height as i32;
-    let extra_bottom_space = EVENT_FONT.character_size.height;
     let mut exceeded_height: i32 = 0;
-    let mut hour = 0;
 
-    let padding = calculate_padding(
-        display.size().height - extra_bottom_space,
-        text_height,
-        HOURS_TO_DISPLAY as i32,
-    );
+    let padding = calculate_padding(display.size().height, text_height, 24);
     info!("padding: {}", padding);
 
     let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
     let position = display.bounding_box().top_left;
 
-    for _ in 0..=HOURS_TO_DISPLAY {
+    for hour in START_DISPLAY_HOUR..=HOURS_TO_DISPLAY {
         Text::with_baseline(
             &format!("{:0>2}:00", hour),
             position + Point::new(0, exceeded_height),
@@ -111,8 +98,8 @@ fn draw_time_row_header(display: &mut Display420BlackWhite) {
         .draw(display)
         .unwrap();
         exceeded_height += text_height + padding;
-        hour += 1;
     }
+    // height is at max
 }
 
 fn draw_base_calendar(display: &mut Display420BlackWhite) {
@@ -147,8 +134,10 @@ fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
     (one_minute * start_minute as f32) as u32
 }
 
-fn calculate_event_width(display_width: i32, left_offset: i32) -> i32 {
-    display_width - (display_width - left_offset)
+fn calculate_text_width(mut char_count: u16) -> u16 {
+    char_count += 1;
+    (char_count * EVENT_FONT.character_size.width as u16)
+        + ((char_count - 1) * EVENT_FONT.character_spacing as u16)
 }
 
 /// Calculates the ending position of the event based on the screen size
@@ -166,14 +155,15 @@ fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
     (one_minute * end_minute as f32) as u32
 }
 
-fn draw_event(
+pub(crate) fn draw_event(
     display: &mut Display420BlackWhite,
     start_minute: u16,
     end_minute: u16,
-    x: i32,
-    end_x: i32,
     text: &str,
 ) {
+    let x = START_POS;
+    let end_x = calculate_text_width(text.chars().count() as u16);
+
     let y = calculate_start_height(display.size().height, start_minute);
 
     let end_y = calculate_end_height(display.size().height, end_minute);
