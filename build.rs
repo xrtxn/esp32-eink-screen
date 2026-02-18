@@ -26,7 +26,9 @@ fn linker_be_nice() {
             "undefined-symbol" => match what.as_str() {
                 "_defmt_timestamp" => {
                     eprintln!();
-                    eprintln!("💡 `defmt` not found - make sure `defmt.x` is added as a linker script and you have included `use defmt_rtt as _;`");
+                    eprintln!(
+                        "💡 `defmt` not found - make sure `defmt.x` is added as a linker script and you have included `use defmt_rtt as _;`"
+                    );
                     eprintln!();
                 }
                 "_stack_start" => {
@@ -38,12 +40,16 @@ fn linker_be_nice() {
                 | "esp_wifi_preempt_yield_task"
                 | "esp_wifi_preempt_task_create" => {
                     eprintln!();
-                    eprintln!("💡 `esp-wifi` has no scheduler enabled. Make sure you have the `builtin-scheduler` feature enabled, or that you provide an external scheduler.");
+                    eprintln!(
+                        "💡 `esp-wifi` has no scheduler enabled. Make sure you have the `builtin-scheduler` feature enabled, or that you provide an external scheduler."
+                    );
                     eprintln!();
                 }
                 "embedded_test_linker_file_not_added_to_rustflags" => {
                     eprintln!();
-                    eprintln!("💡 `embedded-test` not found - make sure `embedded-test.x` is added as a linker script for tests");
+                    eprintln!(
+                        "💡 `embedded-test` not found - make sure `embedded-test.x` is added as a linker script for tests"
+                    );
                     eprintln!();
                 }
                 _ => (),

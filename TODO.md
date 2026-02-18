@@ -1,0 +1,3 @@
+- change how stack allocations work when fetching data, may wait until we get our device, ex. cal_xml
+- unfold lines before pasing in vcalendar response
+- make display asynchronous

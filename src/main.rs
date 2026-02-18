@@ -107,7 +107,7 @@ async fn main(spawner: Spawner) {
             stack.wait_config_up(),
         )
         .await;
-        if let Err(_) = to {
+        if to.is_err() {
             go_to_deep_sleep(&mut rtc)
         }
     }
@@ -116,7 +116,7 @@ async fn main(spawner: Spawner) {
     log::info!("Network connected with IP address: {}", config.address);
 
     // The RTC clock drifts, so every 5th boot we should resync it with the NTP time.
-    if prev_boot_count % 5 == 0 {
+    if prev_boot_count.is_multiple_of(5) {
         let time = networking::get_time(stack).await;
 
         // it uses microseconds, so we should convert it before setting
@@ -161,7 +161,7 @@ async fn main(spawner: Spawner) {
         "Parsed: {:?}",
         events
             .iter()
-            .map(|e| &e.events.get(0).unwrap().summary)
+            .map(|e| &e.events.first().unwrap().summary)
             .collect::<heapless::Vec<_, MAX_DAILY_EVENTS>>()
     );
 
@@ -208,7 +208,7 @@ async fn main(spawner: Spawner) {
             let end_minute = date_to_mins(end_dt);
             log::info!(
                 "Event: {}, start_minute: {}, end_minute: {}",
-                eevent.summary.unwrap_or_else(|| "No summary"),
+                eevent.summary.unwrap_or("No summary"),
                 start_minute,
                 end_minute
             );
@@ -216,7 +216,7 @@ async fn main(spawner: Spawner) {
                 &mut display,
                 start_minute,
                 end_minute,
-                eevent.summary.unwrap_or_else(|| "No summary"),
+                eevent.summary.unwrap_or("No summary"),
             );
         }
     }

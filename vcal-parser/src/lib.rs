@@ -90,11 +90,10 @@ pub fn unfold_lines(input: &str) -> String {
             // Check for CRLF followed by space/tab (folded line)
             if chars.peek() == Some(&'\n') {
                 chars.next(); // consume '\n'
-                if let Some(&next) = chars.peek() {
-                    if next == ' ' || next == '\t' {
+                if let Some(&next) = chars.peek()
+                    && (next == ' ' || next == '\t') {
                         chars.next();
                         continue;
-                    }
                 }
                 // Not a fold
                 result.push('\r');
@@ -104,12 +103,11 @@ pub fn unfold_lines(input: &str) -> String {
             }
         } else if c == '\n' {
             // Handle bare LF followed by space/tab
-            if let Some(&next) = chars.peek() {
-                if next == ' ' || next == '\t' {
+            if let Some(&next) = chars.peek()
+                && (next == ' ' || next == '\t') {
                     chars.next();
                     continue;
                 }
-            }
             result.push(c);
         } else {
             result.push(c);
@@ -177,7 +175,7 @@ fn end_component<'a>(input: &'a str, name: &'static str) -> IResult<&'a str, ()>
 fn make_datetime<'a>(prop: &Property<'a>) -> OffsetDateTime {
     log::trace!("Creating datetime from property: {:?}", prop);
     let mut s: heapless::String<16> = heapless::String::new();
-    s.push_str(&prop.value)
+    s.push_str(prop.value)
         .expect("Value too long for heapless string");
     parse_date(&s)
 }

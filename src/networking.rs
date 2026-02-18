@@ -3,17 +3,13 @@ use core::net::{SocketAddr, SocketAddrV4};
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::Stack;
-use static_cell::StaticCell;
-
-use mbedtls_rs::Tls;
-
-use esp_println::println;
-
 use esp_backtrace as _;
+use esp_println::println;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use reqwless::{Certificate, TlsReference};
 use smoltcp::wire::DnsQueryType;
+use static_cell::StaticCell;
 
 const NEXTCLOUD_CERT: &core::ffi::CStr = {
     // add missing null byte compile time
@@ -55,6 +51,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     use embassy_net::udp::UdpSocket;
     use sntpc::{get_time, NtpContext};
 
+    // todo move to static
     let mut rx_meta = [embassy_net::udp::PacketMetadata::EMPTY; 16];
     let mut rx_buffer = [0; 4096];
     let mut tx_meta = [embassy_net::udp::PacketMetadata::EMPTY; 16];
@@ -77,10 +74,10 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
         .dns_query("pool.ntp.org", DnsQueryType::A)
         .await
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
     {
-        embassy_net::IpAddress::Ipv4(ipv4_addr) => ipv4_addr.clone(),
+        embassy_net::IpAddress::Ipv4(ipv4_addr) => *ipv4_addr,
     };
 
     //todo error handling
@@ -92,7 +89,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     time
 }
 
-pub async fn network_req<'t>(
+pub async fn network_req(
     stack: Stack<'_>,
     tls_reference: TlsReference<'_>,
     date: time::Date,
@@ -144,15 +141,15 @@ pub async fn network_req<'t>(
     )
     .unwrap();
 
-    let origin = option_env!("ORIGIN").unwrap();
-    let username = option_env!("CALDAV_USER").unwrap();
-    let password = option_env!("CALDAV_PASS").unwrap();
+    let origin = env!("ORIGIN");
+    let username = env!("CALDAV_USER");
+    let password = env!("CALDAV_PASS");
     // 64 long uid + max 64 long username
     let path: heapless::String<128> =
         heapless::format!("/remote.php/dav/calendars/{}/{}/", username, CALENDAR_ID).unwrap();
 
     let mut request = client
-        .request(reqwless::request::Method::REPORT, &origin)
+        .request(reqwless::request::Method::REPORT, origin)
         .await
         .unwrap()
         .basic_auth(username, password)
@@ -165,7 +162,7 @@ pub async fn network_req<'t>(
 
     let res = response.body().read_to_end().await.unwrap();
 
-    let res = match str::from_utf8(&res) {
+    let res = match str::from_utf8(res) {
         Ok(v) => v,
         Err(_) => {
             println!("Response body (hex): {:02x?}", res);

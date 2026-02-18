@@ -16,33 +16,11 @@ const MINUTES_IN_A_DAY: u16 = 1440;
 const EVENT_FONT: MonoFont = PROFONT_10_POINT;
 const START_POS: i32 = 40;
 
-pub(crate) fn add_example_events(mut display: &mut Display420BlackWhite) {
-    draw_time_row_header(&mut display);
-    // draw_base_calendar(&mut display);
-    draw_event(&mut display, 360, 420, "Állatok etetése");
-    draw_event(&mut display, 420, 480, "Reggeli");
-    draw_event(&mut display, 480, 720, "Formális nyelvek, automaták");
-    draw_event(&mut display, 720, 860, "IoT technológia");
-    draw_event(&mut display, 760, 860, "5-ös jegy");
-    draw_event(&mut display, 760, 860, "5-ös jegy");
-    draw_event(&mut display, 860, 920, "Ebéd");
-    draw_event(&mut display, 920, 1030, "Pihenés");
-    draw_event(&mut display, 960, 1030, "Alvás");
-    draw_event(&mut display, 1080, 1140, "Vacsora");
-    draw_event(&mut display, 1140, 1260, "Liverpool - FC Barcelona");
-    draw_event(&mut display, 1320, 1600, "Alvás");
-    add_footer_info(&mut display);
-    //draw_days(&mut display, DAYS_TO_DISPLAY);
-}
-
 pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
     use embedded_graphics::text::{Baseline, Text};
 
-    let git_commit = option_env!("GIT_SHORT").unwrap_or("unknown");
-    let git_dirty: bool = option_env!("GIT_DIRTY")
-        .unwrap_or_else(|| "false")
-        .parse()
-        .unwrap_or_else(|_| false);
+    let git_commit = env!("GIT_SHORT");
+    let git_dirty: bool = env!("GIT_DIRTY").parse().unwrap_or(false);
     // 8 is the text + 8 is short hash in build.rs + 1 is possible *
     let mut build_info: heapless::String<17> = format!("commit: {git_commit}").unwrap();
     if git_dirty {
@@ -181,7 +159,7 @@ pub(crate) fn draw_event(
 
     let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
     let char_width = EVENT_FONT.character_size.width;
-    let max_chars_per_line = (end_x - 4).max(0) as u32 / char_width;
+    let max_chars_per_line = (end_x - 4) as u32 / char_width;
 
     if max_chars_per_line == 0 {
         return;
@@ -243,7 +221,7 @@ fn draw_days(display: &mut Display420BlackWhite, count: u8) {
         info!("Drawing day '{}' at position {:?}", day_text, pos);
 
         Text::with_baseline(
-            &day_text,
+            day_text,
             pos,
             text_style,
             embedded_graphics::text::Baseline::Top,

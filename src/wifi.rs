@@ -11,25 +11,20 @@ use esp_radio::wifi::{
 pub async fn connection(mut controller: WifiController<'static>) {
     println!("Device capabilities: {:?}", controller.capabilities());
     loop {
-        match esp_radio::wifi::sta_state() {
-            WifiStaState::Connected => {
-                // wait until we're no longer connected
-                controller.wait_for_event(WifiEvent::StaDisconnected).await;
-                println!("Disconnected, retrying...");
-                Timer::after(Duration::from_millis(5000)).await
-            }
-            _ => {}
+        if esp_radio::wifi::sta_state() == WifiStaState::Connected {
+            // wait until we're no longer connected
+            controller.wait_for_event(WifiEvent::StaDisconnected).await;
+            println!("Disconnected, retrying...");
+            Timer::after(Duration::from_millis(5000)).await
         }
 
-        let ssid = option_env!("WIFI_SSID").unwrap();
+        let ssid = env!("WIFI_SSID");
 
         if !matches!(controller.is_started(), Ok(true)) {
             let station_config = ModeConfig::Client(
                 ClientConfig::default()
                     .with_ssid(alloc::string::String::from(ssid))
-                    .with_password(alloc::string::String::from(
-                        option_env!("WIFI_PASS").unwrap(),
-                    )),
+                    .with_password(alloc::string::String::from(env!("WIFI_PASS"))),
             );
             controller.set_config(&station_config).unwrap();
             println!("Starting wifi");
