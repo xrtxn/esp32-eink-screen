@@ -8,6 +8,7 @@
 )]
 
 mod display;
+mod hardware;
 mod networking;
 mod wifi;
 
@@ -16,7 +17,6 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
 use embassy_net::StackResources;
-use embassy_time::{Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
 use esp_hal::{
@@ -28,7 +28,6 @@ use esp_hal::{
     },
     time::Rate,
 };
-use esp_println::println;
 use static_cell::StaticCell;
 use time::OffsetDateTime;
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
@@ -37,6 +36,7 @@ use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 use esp_backtrace as _;
 
 use crate::display::{add_footer_info, draw_event};
+use crate::hardware::go_to_deep_sleep;
 
 extern crate alloc;
 
@@ -101,22 +101,19 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(wifi::connection(wifi_controller)).ok();
     spawner.spawn(wifi::net_task(runner)).ok();
-
-    loop {
-        if stack.is_link_up() {
-            break;
+    {
+        let to = embassy_time::with_timeout(
+            embassy_time::Duration::from_secs(30),
+            stack.wait_config_up(),
+        )
+        .await;
+        if let Err(_) = to {
+            go_to_deep_sleep(&mut rtc)
         }
-        Timer::after(Duration::from_millis(500)).await;
     }
 
-    println!("Waiting to get IP address...");
-    loop {
-        if let Some(config) = stack.config_v4() {
-            println!("Got IP: {}", config.address);
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
+    let config = stack.config_v4().unwrap();
+    log::info!("Network connected with IP address: {}", config.address);
 
     // The RTC clock drifts, so every 5th boot we should resync it with the NTP time.
     if prev_boot_count % 5 == 0 {
@@ -134,15 +131,33 @@ async fn main(spawner: Spawner) {
         time::OffsetDateTime::from_unix_timestamp(rtc.current_time_us() as i64 / 1_000_000)
             .unwrap();
 
-    let cal_xml = networking::network_req(stack, tls, time_from_rtc.date()).await;
-    println!("Received calendar data len: {}", cal_xml.len());
+    let mut cal_xml = None;
+
+    for tries in 1..=3 {
+        let req = networking::network_req(stack, tls.reference(), time_from_rtc.date());
+        if let Ok(res) =
+            embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
+        {
+            cal_xml = Some(res);
+            break;
+        }
+        log::warn!("Failed to get calendar data on attempt {tries}, retrying...");
+    }
+
+    let cal_xml = cal_xml.unwrap_or_else(|| {
+        log::error!("Failed after 3 attempts, entering deep sleep");
+        go_to_deep_sleep(&mut rtc)
+    });
+
+    log::trace!("Received calendar data len: {}", cal_xml.len());
     let cal_strings = extract_calendar_data(&cal_xml);
+    // todo do unfolding
     let events: heapless::Vec<vcal_parser::VCalendar<'_>, MAX_DAILY_EVENTS> = cal_strings
         .iter()
         .map(|s| vcal_parser::parse_vcalendar(s).unwrap().1)
         .collect();
 
-    println!(
+    log::trace!(
         "Parsed: {:?}",
         events
             .iter()
@@ -156,7 +171,7 @@ async fn main(spawner: Spawner) {
     let spi_bus = Spi::new(
         peripherals.SPI2,
         Config::default()
-            .with_frequency(Rate::from_khz(100))
+            .with_frequency(Rate::from_mhz(4))
             .with_mode(Mode::_0),
     )
     .unwrap()
@@ -184,14 +199,14 @@ async fn main(spawner: Spawner) {
     driver.init().unwrap();
     log::info!("EPD initialized!");
     display::draw_time_row_header(&mut display);
+    let tz_offset = time::UtcOffset::from_hms(1, 0, 0).unwrap();
     for event in events {
         for eevent in event.events {
-            let tz_offset = time::UtcOffset::from_hms(1, 0, 0).unwrap();
             let start_dt = time::OffsetDateTime::to_offset(eevent.dtstart.unwrap(), tz_offset);
             let end_dt = time::OffsetDateTime::to_offset(eevent.dtend.unwrap(), tz_offset);
             let start_minute = date_to_mins(start_dt);
             let end_minute = date_to_mins(end_dt);
-            println!(
+            log::info!(
                 "Event: {}, start_minute: {}, end_minute: {}",
                 eevent.summary.unwrap_or_else(|| "No summary"),
                 start_minute,
@@ -209,10 +224,7 @@ async fn main(spawner: Spawner) {
     driver.full_update(&display).unwrap();
     log::info!("Display updated!");
 
-    let sleep_time = core::time::Duration::from_secs(120);
-    let wake_sources = esp_hal::rtc_cntl::sleep::TimerWakeupSource::new(sleep_time);
-    log::info!("Going to sleep for {:?}...", sleep_time);
-    rtc.sleep_deep(&[&wake_sources]);
+    hardware::go_to_deep_sleep(&mut rtc);
 }
 
 // this is overkill but may be necessary

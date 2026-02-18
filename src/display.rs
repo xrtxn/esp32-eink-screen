@@ -3,7 +3,6 @@ use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
-use esp_println::println;
 use heapless::format;
 use log::info;
 use profont::PROFONT_10_POINT;
@@ -120,7 +119,7 @@ fn draw_base_calendar(display: &mut Display420BlackWhite) {
 
 /// Calculates the starting position of the event based on the screen size
 fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
-    println!("display_height: {}", display_height);
+    log::trace!("display_height: {}", display_height);
     let text_height = EVENT_FONT.character_size.height as i32;
     let extra_bottom_space = EVENT_FONT.character_size.height;
     let padding = calculate_padding(
@@ -132,7 +131,7 @@ fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
     let one_hour_height = text_height + padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
-    println!("one_minute: {}", one_minute);
+    log::trace!("one_minute: {}", one_minute);
     (one_minute * start_minute as f32) as u32
 }
 
@@ -144,7 +143,7 @@ fn calculate_text_width(mut char_count: u16) -> u16 {
 
 /// Calculates the ending position of the event based on the screen size
 fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
-    println!("display_height: {}", display_height);
+    log::trace!("display_height: {}", display_height);
     let text_height = EVENT_FONT.character_size.height as i32;
     let extra_bottom_space = EVENT_FONT.character_size.height;
     let padding = calculate_padding(

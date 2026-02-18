@@ -12,11 +12,18 @@ use esp_println::println;
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
-use reqwless::Certificate;
+use reqwless::{Certificate, TlsReference};
 use smoltcp::wire::DnsQueryType;
 
-// add missing null byte
-const NEXTCLOUD_CERT: &[u8] = concat!(include_str!("../cert.pem"), "\0").as_bytes();
+const NEXTCLOUD_CERT: &core::ffi::CStr = {
+    // add missing null byte compile time
+    let s = concat!(include_str!("../cert.pem"), "\0");
+
+    match core::ffi::CStr::from_bytes_with_nul(s.as_bytes()) {
+        Ok(c) => c,
+        Err(_) => panic!("cert contains interior null bytes or is missing terminator"),
+    }
+};
 const CALENDAR_ID: &str = "szakdoga-teszt";
 const TOTAL_VCAL_BUFFER: usize = crate::MAX_DAILY_EVENTS * crate::MAX_VCALENDAR_BYTES;
 
@@ -24,17 +31,19 @@ static CLIENT_STATE: StaticCell<embassy_net::tcp::client::TcpClientState<1, 4096
     StaticCell::new();
 
 #[derive(Copy, Clone, Default)]
-struct Timestamp {
+struct NtpTimestamp {
     duration: time::Duration,
 }
 
-impl sntpc::NtpTimestampGenerator for Timestamp {
+impl sntpc::NtpTimestampGenerator for NtpTimestamp {
     fn init(&mut self) {
-        self.duration = time::Duration::new(0, 0);
+        let ticks = embassy_time::Instant::now().as_ticks();
+        let micros = ticks * 1_000_000 / embassy_time::TICK_HZ;
+        self.duration = time::Duration::microseconds(micros as i64);
     }
 
     fn timestamp_sec(&self) -> u64 {
-        self.duration.as_seconds_f32() as u64
+        self.duration.whole_seconds() as u64
     }
 
     fn timestamp_subsec_micros(&self) -> u32 {
@@ -62,7 +71,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     socket.bind(123).unwrap();
     let socket = sntpc_net_embassy::UdpSocketWrapper::new(socket);
 
-    let context = NtpContext::new(Timestamp::default());
+    let context = NtpContext::new(NtpTimestamp::default());
 
     let ip = match stack
         .dns_query("pool.ntp.org", DnsQueryType::A)
@@ -74,6 +83,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
         embassy_net::IpAddress::Ipv4(ipv4_addr) => ipv4_addr.clone(),
     };
 
+    //todo error handling
     let result = get_time(SocketAddr::V4(SocketAddrV4::new(ip, 123)), &socket, context)
         .await
         .unwrap();
@@ -84,7 +94,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
 
 pub async fn network_req<'t>(
     stack: Stack<'_>,
-    tls: Tls<'_>,
+    tls_reference: TlsReference<'_>,
     date: time::Date,
 ) -> heapless::String<TOTAL_VCAL_BUFFER> {
     let mut fmt_date = heapless::String::<8>::new();
@@ -103,9 +113,8 @@ pub async fn network_req<'t>(
     );
     let dns_socket = DnsSocket::new(stack);
 
-    let cstr = unsafe { core::ffi::CStr::from_bytes_with_nul_unchecked(NEXTCLOUD_CERT) };
-    let certs = Certificate::new(reqwless::X509::PEM(cstr)).unwrap();
-    let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls.reference());
+    let certs = Certificate::new(reqwless::X509::PEM(NEXTCLOUD_CERT)).unwrap();
+    let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls_reference);
 
     let mut client = HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
 

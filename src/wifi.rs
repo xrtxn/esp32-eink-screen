@@ -4,11 +4,8 @@ use esp_alloc as _;
 use esp_backtrace as _;
 use esp_println::println;
 use esp_radio::wifi::{
-    ClientConfig, ModeConfig, ScanConfig, WifiController, WifiDevice, WifiEvent, WifiStaState,
+    ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent, WifiStaState,
 };
-
-use esp_backtrace as _;
-use log::{info, warn};
 
 #[embassy_executor::task]
 pub async fn connection(mut controller: WifiController<'static>) {
@@ -38,24 +35,6 @@ pub async fn connection(mut controller: WifiController<'static>) {
             println!("Starting wifi");
             controller.start_async().await.unwrap();
             println!("Wifi started!");
-
-            let scan_config = ScanConfig::default().with_max(10);
-
-            loop {
-                let results = controller
-                    .scan_with_config_async(scan_config)
-                    .await
-                    .unwrap();
-
-                if results.iter().any(|f| f.ssid == ssid) {
-                    break;
-                }
-
-                warn!("Target SSID not found, retrying...");
-                Timer::after(Duration::from_millis(2000)).await;
-            }
-
-            info!("Target SSID found!");
         }
         println!("About to connect...");
 
@@ -63,7 +42,7 @@ pub async fn connection(mut controller: WifiController<'static>) {
             Ok(_) => println!("Wifi connected!"),
             Err(e) => {
                 println!("Failed to connect to wifi: {e:?}");
-                Timer::after(Duration::from_millis(5000)).await
+                Timer::after(Duration::from_millis(1000)).await
             }
         }
     }
