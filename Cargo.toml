@@ -27,7 +27,7 @@ esp-rtos = { version = "0.2.0", features = [
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32s3", "log-04"] }
 log = "0.4.27"
 
-embassy-net = { version = "0.7.1", features = [
+embassy-net = { version = "0.8", features = [
   "dhcpv4",
   "log",
   "tcp",
@@ -75,21 +75,18 @@ trouble-host = { version = "0.5.0", features = ["gatt"] }
 critical-section = "1.2.0"
 static_cell = { version = "2.1.1", features = ["nightly"] }
 
-weact-studio-epd = { path = "/home/xrtxn/programming/rust/thesis/weact-fork/", features = ["blocking"] }
+weact-studio-epd = { git = "https://github.com/xrtxn/weact-studio-epd.git", branch = "feat/4.2_support", features = ["blocking"] }
 embedded-graphics = "0.8.1"
 profont = "0.7.0"
 display-interface-spi = "0.5.0"
 embedded-hal-bus = "0.3.0"
-#reqwless = { path = "/home/xrtxn/programming/rust/thesis/reqwless/", features = ["esp-mbedtls", "log"] }
-reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="thesis", default-features = false, features = ["log", "esp-mbedtls", "alloc"] }
-#embedded-tls = { version = "0.17", default-features = false, features = ["log", "alloc"] }
-#reqwless = { git = "https://github.com/drogue-iot/reqwless.git", default-features = false, features = ["esp-mbedtls","log"] }
-#reqwless = { git = "https://github.com/drogue-iot/reqwless.git", rev="311060f9dcfe065941fa224139786fe3c205e71b", features = ["log"] }
-esp-mbedtls = { git = "https://github.com/AnthonyGrondin/esp-mbedtls.git", branch="update/1.0.0", features = ["esp32s3"] }
+reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="main", default-features = false, features = ["log", "mbedtls-rs"] }
+mbedtls-rs = { git = "https://github.com/esp-rs/mbedtls-rs.git" }
 roxmltree = { version = "0.21.1", default-features = false }
 vcal-parser = { path = "./vcal-parser" }
 time = { version = "0.3", default-features = false, features = ["parsing", "alloc"] }
-sntpc = { version = "0.7.0", default-features = false, features = ["embassy-socket"] }
+sntpc = { version = "0.8", default-features = false }
+sntpc-net-embassy = "0.8"
 heapless = "0.9"
 
 [build-dependencies]
@@ -112,6 +109,3 @@ overflow-checks  = false
 
 [profile.dev.package.esp-radio]
 opt-level = 3
-
-[patch."https://github.com/esp-rs/esp-mbedtls.git"]
-esp-mbedtls = { git = "https://github.com/AnthonyGrondin/esp-mbedtls.git", branch = "update/1.0.0" }

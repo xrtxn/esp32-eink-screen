@@ -17,7 +17,6 @@ use embassy_net::StackResources;
 use embassy_time::{Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
-use esp_hal::rng::Rng;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
@@ -45,6 +44,7 @@ pub const MAX_VCALENDAR_BYTES: usize = 2000;
 
 static NETWORK_STACK: StaticCell<StackResources<3>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
+static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -76,8 +76,10 @@ async fn main(spawner: Spawner) {
 
     let config = embassy_net::Config::dhcpv4(Default::default());
 
-    let rng = Rng::new();
-    let seed = (rng.random() as u64) << 32 | rng.random() as u64;
+    let _trng_source = esp_hal::rng::TrngSource::new(peripherals.RNG, peripherals.ADC1);
+
+    let trng = TRNG.init(esp_hal::rng::Trng::try_new().unwrap());
+    let seed = (trng.random() as u64) << 32 | trng.random() as u64;
 
     // Init network stack
     let (stack, runner) = embassy_net::new(
@@ -106,13 +108,11 @@ async fn main(spawner: Spawner) {
         Timer::after(Duration::from_millis(500)).await;
     }
 
-    let rsa_peripherals = peripherals.RSA;
-    let sha_peripherals = peripherals.SHA;
-
     let time = networking::get_time(stack).await;
 
-    let cal_xml =
-        networking::network_req(stack, rsa_peripherals, sha_peripherals, time.date()).await;
+    let tls = mbedtls_rs::Tls::new(trng).unwrap();
+
+    let cal_xml = networking::network_req(stack, tls, time.date()).await;
     println!("Received calendar data len: {}", cal_xml.len());
     let cal_strings = extract_calendar_data(&cal_xml);
     let events: heapless::Vec<vcal_parser::VCalendar<'_>, MAX_DAILY_EVENTS> = cal_strings

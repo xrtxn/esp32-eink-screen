@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     esp-rs-nix = {
-      url = "github:leighleighleigh/esp-rs-nix";
+      url = "github:xrtxn/esp-rs-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

@@ -8,15 +8,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1770758479,
-        "narHash": "sha256-X5qUqyx9YFUqiqEMR9kYklQ2WHd7f+DSocMm7ahwCks=",
-        "owner": "leighleighleigh",
+        "lastModified": 1771325739,
+        "narHash": "sha256-KXNOqNR5qtknWuHvCsacMKpYpSVuNjqtk2viFU5Y0wA=",
+        "owner": "xrtxn",
         "repo": "esp-rs-nix",
-        "rev": "d39d26f367f46cc111ce889b807dbb6b4f0c1d2e",
+        "rev": "0c0a53368a1341d537384b29efe1a0dcdcba25be",
         "type": "github"
       },
       "original": {
-        "owner": "leighleighleigh",
+        "owner": "xrtxn",
         "repo": "esp-rs-nix",
         "type": "github"
       }

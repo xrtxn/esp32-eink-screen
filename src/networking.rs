@@ -3,17 +3,16 @@ use core::net::{SocketAddr, SocketAddrV4};
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::Stack;
-use esp_hal::peripherals::{RSA, SHA};
 use static_cell::StaticCell;
 
-use esp_mbedtls::Tls;
+use mbedtls_rs::Tls;
 
 use esp_println::println;
 
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
-use reqwless::{Certificates, X509};
+use reqwless::Certificate;
 use smoltcp::wire::DnsQueryType;
 
 // add missing null byte
@@ -61,6 +60,8 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
         &mut tx_buffer,
     );
     socket.bind(123).unwrap();
+    let socket = sntpc_net_embassy::UdpSocketWrapper::new(socket);
+
     let context = NtpContext::new(Timestamp::default());
 
     let ip = match stack
@@ -81,10 +82,9 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     time
 }
 
-pub async fn network_req(
+pub async fn network_req<'t>(
     stack: Stack<'_>,
-    rsa_peripherial: RSA<'_>,
-    sha_peripherial: SHA<'_>,
+    tls: Tls<'_>,
     date: time::Date,
 ) -> heapless::String<TOTAL_VCAL_BUFFER> {
     let mut fmt_date = heapless::String::<8>::new();
@@ -103,11 +103,8 @@ pub async fn network_req(
     );
     let dns_socket = DnsSocket::new(stack);
 
-    let tls = Tls::new(sha_peripherial)
-        .unwrap()
-        .with_hardware_rsa(rsa_peripherial);
-    let mut certs = Certificates::new();
-    certs.ca_chain = Some(X509::pem(NEXTCLOUD_CERT).unwrap());
+    let cstr = unsafe { core::ffi::CStr::from_bytes_with_nul_unchecked(NEXTCLOUD_CERT) };
+    let certs = Certificate::new(reqwless::X509::PEM(cstr)).unwrap();
     let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls.reference());
 
     let mut client = HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
