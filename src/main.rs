@@ -11,6 +11,8 @@ mod display;
 mod networking;
 mod wifi;
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
 use embassy_net::StackResources;
@@ -46,6 +48,9 @@ static NETWORK_STACK: StaticCell<StackResources<3>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
 static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
 
+#[unsafe(link_section = ".rtc_slow.data")]
+static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
+
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
@@ -55,9 +60,14 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
+    let prev_boot_count = BOOT_COUNT.fetch_add(1, Ordering::SeqCst);
+    log::info!("Boot count: {}", prev_boot_count + 1);
+
     esp_alloc::heap_allocator!(size: 64 * 1024);
     // COEX needs more RAM - so we've added some more
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
+
+    let mut rtc = esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR);
 
     let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
@@ -108,11 +118,23 @@ async fn main(spawner: Spawner) {
         Timer::after(Duration::from_millis(500)).await;
     }
 
-    let time = networking::get_time(stack).await;
+    // The RTC clock drifts, so every 5th boot we should resync it with the NTP time.
+    if prev_boot_count % 5 == 0 {
+        let time = networking::get_time(stack).await;
+
+        // it uses microseconds, so we should convert it before setting
+        rtc.set_current_time_us(
+            (time.unix_timestamp() as u64 * 1_000_000) + (time.microsecond() as u64),
+        );
+    }
 
     let tls = mbedtls_rs::Tls::new(trng).unwrap();
 
-    let cal_xml = networking::network_req(stack, tls, time.date()).await;
+    let time_from_rtc =
+        time::OffsetDateTime::from_unix_timestamp(rtc.current_time_us() as i64 / 1_000_000)
+            .unwrap();
+
+    let cal_xml = networking::network_req(stack, tls, time_from_rtc.date()).await;
     println!("Received calendar data len: {}", cal_xml.len());
     let cal_strings = extract_calendar_data(&cal_xml);
     let events: heapless::Vec<vcal_parser::VCalendar<'_>, MAX_DAILY_EVENTS> = cal_strings
@@ -185,6 +207,12 @@ async fn main(spawner: Spawner) {
     }
     add_footer_info(&mut display);
     driver.full_update(&display).unwrap();
+    log::info!("Display updated!");
+
+    let sleep_time = core::time::Duration::from_secs(120);
+    let wake_sources = esp_hal::rtc_cntl::sleep::TimerWakeupSource::new(sleep_time);
+    log::info!("Going to sleep for {:?}...", sleep_time);
+    rtc.sleep_deep(&[&wake_sources]);
 }
 
 // this is overkill but may be necessary
