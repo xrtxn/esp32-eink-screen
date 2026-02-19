@@ -1,5 +1,5 @@
-use picoserve::routing::get;
 use picoserve::AppBuilder;
+use picoserve::routing::get;
 
 pub struct AppProps;
 

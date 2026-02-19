@@ -15,12 +15,12 @@ use std::string::String;
 use std::vec::Vec;
 
 use nom::{
+    IResult, Parser,
     bytes::complete::{tag, take_while1},
     character::complete::{char, line_ending, not_line_ending},
     combinator::opt,
     multi::many0,
     sequence::{preceded, separated_pair},
-    IResult, Parser,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,9 +91,10 @@ pub fn unfold_lines(input: &str) -> String {
             if chars.peek() == Some(&'\n') {
                 chars.next(); // consume '\n'
                 if let Some(&next) = chars.peek()
-                    && (next == ' ' || next == '\t') {
-                        chars.next();
-                        continue;
+                    && (next == ' ' || next == '\t')
+                {
+                    chars.next();
+                    continue;
                 }
                 // Not a fold
                 result.push('\r');
@@ -104,10 +105,11 @@ pub fn unfold_lines(input: &str) -> String {
         } else if c == '\n' {
             // Handle bare LF followed by space/tab
             if let Some(&next) = chars.peek()
-                && (next == ' ' || next == '\t') {
-                    chars.next();
-                    continue;
-                }
+                && (next == ' ' || next == '\t')
+            {
+                chars.next();
+                continue;
+            }
             result.push(c);
         } else {
             result.push(c);

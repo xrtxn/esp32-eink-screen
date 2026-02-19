@@ -204,7 +204,7 @@ pub(crate) fn draw_event(
 fn draw_days(display: &mut Display420BlackWhite, count: u8) {
     let left_padding: i32 = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
     let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
-    let starting_x = 0 + left_padding + 5;
+    let starting_x = START_POS + left_padding + 5;
     let y = display.bounding_box().size.height - EVENT_FONT.character_size.height;
     let mut x_offset = 0;
     for day in 0..count {
@@ -271,7 +271,7 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         }
     }
     crate::display::add_footer_info(display);
-    driver.full_update(&display).unwrap();
+    driver.full_update(display).unwrap();
     log::info!("Display updated!");
 
     crate::hardware::go_to_deep_sleep(rtc);

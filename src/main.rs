@@ -14,14 +14,14 @@ mod networking;
 mod server;
 mod wifi;
 
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
-use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use crate::server::{WEB_TASK_POOL_SIZE, web_task};
+use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use picoserve::AppBuilder;
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
-use embassy_net::tcp::client::TcpClient;
 use embassy_net::StackResources;
+use embassy_net::tcp::client::TcpClient;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
 use esp_hal::{
@@ -196,13 +196,16 @@ async fn main(spawner: Spawner) {
             display::write_to_screen(&mut display, &mut driver, events, &mut rtc).await;
         }
         BootType::Config => {
-            let app = picoserve::make_static!(picoserve::AppRouter<server::AppProps>, server::AppProps.build_app());
+            let app = picoserve::make_static!(
+                picoserve::AppRouter<server::AppProps>,
+                server::AppProps.build_app()
+            );
 
             for task_id in 0..WEB_TASK_POOL_SIZE {
                 spawner.must_spawn(web_task(task_id, stack, app));
             }
         }
-    }
+    };
 }
 
 fn extract_calendar_data(
