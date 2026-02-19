@@ -2,6 +2,7 @@ use core::fmt::Write;
 use core::net::{SocketAddr, SocketAddrV4};
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
+use embassy_net::udp::PacketMetadata;
 use embassy_net::Stack;
 use esp_backtrace as _;
 use esp_println::println;
@@ -23,8 +24,13 @@ const NEXTCLOUD_CERT: &core::ffi::CStr = {
 const CALENDAR_ID: &str = "szakdoga-teszt";
 const TOTAL_VCAL_BUFFER: usize = crate::MAX_DAILY_EVENTS * crate::MAX_VCALENDAR_BYTES;
 
-static CLIENT_STATE: StaticCell<embassy_net::tcp::client::TcpClientState<1, 4096, 4096>> =
-    StaticCell::new();
+pub(crate) static CLIENT_STATE: StaticCell<
+    embassy_net::tcp::client::TcpClientState<1, 4096, 4096>,
+> = StaticCell::new();
+static RX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
+static RX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
+static TX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
+static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 
 #[derive(Copy, Clone, Default)]
 struct NtpTimestamp {
@@ -51,20 +57,12 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     use embassy_net::udp::UdpSocket;
     use sntpc::{get_time, NtpContext};
 
-    // todo move to static
-    let mut rx_meta = [embassy_net::udp::PacketMetadata::EMPTY; 16];
-    let mut rx_buffer = [0; 4096];
-    let mut tx_meta = [embassy_net::udp::PacketMetadata::EMPTY; 16];
-    let mut tx_buffer = [0; 4096];
+    let rx_meta = RX_META.init([PacketMetadata::EMPTY; 16]);
+    let rx_buffer = RX_BUFFER.init([0; 4096]);
+    let tx_meta = TX_META.init([PacketMetadata::EMPTY; 16]);
+    let tx_buffer = TX_BUFFER.init([0; 4096]);
 
-    // Within an Embassy async context
-    let mut socket = UdpSocket::new(
-        stack,
-        &mut rx_meta,
-        &mut rx_buffer,
-        &mut tx_meta,
-        &mut tx_buffer,
-    );
+    let mut socket = UdpSocket::new(stack, rx_meta, rx_buffer, tx_meta, tx_buffer);
     socket.bind(123).unwrap();
     let socket = sntpc_net_embassy::UdpSocketWrapper::new(socket);
 
@@ -91,9 +89,12 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
 
 pub async fn network_req(
     stack: Stack<'_>,
+    tcp_client: &TcpClient<'_, 1, 4096, 4096>,
     tls_reference: TlsReference<'_>,
     date: time::Date,
-) -> heapless::String<TOTAL_VCAL_BUFFER> {
+    cal_xml_buf: &mut heapless::String<TOTAL_VCAL_BUFFER>,
+    req_buffer: &mut [u8; 8192],
+) {
     let mut fmt_date = heapless::String::<8>::new();
 
     let _ = write!(
@@ -104,18 +105,12 @@ pub async fn network_req(
         date.day()
     );
 
-    let tcp_client = TcpClient::new(
-        stack,
-        CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
-    );
     let dns_socket = DnsSocket::new(stack);
 
     let certs = Certificate::new(reqwless::X509::PEM(NEXTCLOUD_CERT)).unwrap();
     let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls_reference);
 
-    let mut client = HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
-
-    let mut req_buffer = [0; 8192];
+    let mut client = HttpClient::new_with_tls(tcp_client, &dns_socket, tls_config);
 
     let body: heapless::String<553> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
@@ -157,7 +152,7 @@ pub async fn network_req(
         .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
         .body(body.as_bytes());
 
-    let response = request.send(&mut req_buffer).await.unwrap();
+    let response = request.send(req_buffer).await.unwrap();
     println!("Response status: {:?}", response.status);
 
     let res = response.body().read_to_end().await.unwrap();
@@ -169,5 +164,8 @@ pub async fn network_req(
             todo!()
         }
     };
-    heapless::String::try_from(res).unwrap()
+    cal_xml_buf.clear();
+    cal_xml_buf
+        .push_str(res)
+        .expect("Response too large for calendar buffer");
 }

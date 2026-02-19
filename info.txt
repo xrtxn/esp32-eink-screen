@@ -4,3 +4,6 @@ D/C - 18
 CS - 10
 SCL - 12
 SDA - 11
+
+LED - 48
+LED simple - 41

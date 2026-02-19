@@ -16,6 +16,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
+use embassy_net::tcp::client::TcpClient;
 use embassy_net::StackResources;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
@@ -44,9 +45,16 @@ extern crate alloc;
 pub const MAX_DAILY_EVENTS: usize = 16;
 pub const MAX_VCALENDAR_BYTES: usize = 2000;
 
+const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
+
 static NETWORK_STACK: StaticCell<StackResources<3>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
 static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
+
+// Large buffers in static memory to keep them out of the async future,
+// which would otherwise blow the 8KB task stack.
+static CAL_XML_BUF: StaticCell<heapless::String<TOTAL_VCAL_BUFFER>> = StaticCell::new();
+static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
 
 #[unsafe(link_section = ".rtc_slow.data")]
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -71,8 +79,22 @@ async fn main(spawner: Spawner) {
 
     let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
-    let sw_int =
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+
+    // Set GPIO2 as an output, and set its state high initially.
+    let mut io = esp_hal::gpio::Io::new(peripherals.IO_MUX);
+    io.set_interrupt_handler(hardware::handler);
+
+    let button = peripherals.GPIO0;
+
+    let config = esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up);
+    let mut button = Input::new(button, config);
+
+    critical_section::with(|cs| {
+        button.listen(esp_hal::gpio::Event::FallingEdge);
+        hardware::BUTTON.borrow_ref_mut(cs).replace(button)
+    });
+
+    let delay = esp_hal::delay::Delay::new();
 
     let (wifi_controller, interfaces) = esp_radio::wifi::new(
         RADIO_CONTROLLER
@@ -131,26 +153,40 @@ async fn main(spawner: Spawner) {
         time::OffsetDateTime::from_unix_timestamp(rtc.current_time_us() as i64 / 1_000_000)
             .unwrap();
 
-    let mut cal_xml = None;
+    let cal_xml_buf = CAL_XML_BUF.init(heapless::String::new());
+    let req_buffer = REQ_BUFFER.init([0u8; 8192]);
 
+    let tcp_client = TcpClient::new(
+        stack,
+        networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
+    );
+
+    let mut success = false;
     for tries in 1..=3 {
-        let req = networking::network_req(stack, tls.reference(), time_from_rtc.date());
-        if let Ok(res) =
-            embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
+        req_buffer.fill(0);
+        let req = networking::network_req(
+            stack,
+            &tcp_client,
+            tls.reference(),
+            time_from_rtc.date(),
+            cal_xml_buf,
+            req_buffer,
+        );
+        if let Ok(()) = embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
         {
-            cal_xml = Some(res);
+            success = true;
             break;
         }
         log::warn!("Failed to get calendar data on attempt {tries}, retrying...");
     }
 
-    let cal_xml = cal_xml.unwrap_or_else(|| {
+    if !success {
         log::error!("Failed after 3 attempts, entering deep sleep");
-        go_to_deep_sleep(&mut rtc)
-    });
+        go_to_deep_sleep(&mut rtc);
+    }
 
-    log::trace!("Received calendar data len: {}", cal_xml.len());
-    let cal_strings = extract_calendar_data(&cal_xml);
+    log::trace!("Received calendar data len: {}", cal_xml_buf.len());
+    let cal_strings = extract_calendar_data(cal_xml_buf);
     // todo do unfolding
     let events: heapless::Vec<vcal_parser::VCalendar<'_>, MAX_DAILY_EVENTS> = cal_strings
         .iter()
