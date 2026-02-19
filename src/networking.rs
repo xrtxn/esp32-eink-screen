@@ -111,7 +111,8 @@ pub async fn network_req(
 
     let mut client = HttpClient::new_with_tls(tcp_client, &dns_socket, tls_config);
 
-    let body: heapless::String<553> = heapless::format!(
+    // todo get date and time based on user timezone, caldav only accepts utc time
+    let body: heapless::String<554> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
     <d:prop>
@@ -123,7 +124,7 @@ pub async fn network_req(
     <c:filter>
         <c:comp-filter name="VCALENDAR">
             <c:comp-filter name="VEVENT">
-                <c:time-range start="{}T000000Z" end="{}T235959"/>
+                <c:time-range start="{}T000000Z" end="{}T235959Z"/>
             </c:comp-filter>
         </c:comp-filter>
     </c:filter>

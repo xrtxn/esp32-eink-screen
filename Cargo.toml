@@ -7,7 +7,7 @@ members = [
 [package]
 edition      = "2024"
 name         = "esp32-thesis"
-rust-version = "1.88"
+rust-version = "1.93"
 version      = "0.1.0"
 
 [[bin]]
@@ -90,6 +90,7 @@ time = { version = "0.3", default-features = false, features = ["parsing", "allo
 sntpc = { version = "0.8", default-features = false }
 sntpc-net-embassy = "0.8"
 heapless = "0.9"
+picoserve = { version = "0.18.0", features = ["embassy", "log"] }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

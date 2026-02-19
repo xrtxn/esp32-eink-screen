@@ -1,11 +1,7 @@
-use display_interface::WriteOnlyDataCommand;
 use display_interface_spi::SPIInterface;
-use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin as EhalInputPin, OutputPin as EhalOutputPin};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::gpio::{InputPin, OutputPin};
 use esp_hal::peripherals::SPI2;
-use esp_hal::rtc_cntl::Rtc;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},

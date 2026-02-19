@@ -1,4 +1,4 @@
-#![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 #![no_std]
 #![no_main]
 #![deny(
@@ -11,9 +11,12 @@ mod display;
 mod hardware;
 mod init;
 mod networking;
+mod server;
 mod wifi;
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use picoserve::AppBuilder;
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -42,7 +45,7 @@ pub const MAX_VCALENDAR_BYTES: usize = 2000;
 
 const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
 
-static NETWORK_STACK: StaticCell<StackResources<3>> = StaticCell::new();
+static NETWORK_STACK: StaticCell<StackResources<4>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
 static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
 
@@ -52,8 +55,11 @@ static CAL_STRINGS: StaticCell<
     heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS>,
 > = StaticCell::new();
 
-#[unsafe(link_section = ".rtc_fast.data")]
+#[esp_hal::ram(unstable(rtc_fast))]
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
+
+#[esp_hal::ram(unstable(rtc_fast))]
+static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
 
 type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
@@ -66,6 +72,26 @@ type EpdDriver = WeActStudio420BlackWhiteDriver<
     Output<'static>,
     Delay,
 >;
+
+enum BootType {
+    Display = 0,
+    Config = 1,
+}
+
+impl BootType {
+    #[allow(unused)]
+    fn set_boot_type(val: BootType) {
+        BOOT_TYPES.store(val as u8, Ordering::Relaxed);
+    }
+
+    fn get_boot_type() -> BootType {
+        match BOOT_TYPES.load(Ordering::Relaxed) {
+            0 => BootType::Display,
+            1 => BootType::Config,
+            _ => panic!(),
+        }
+    }
+}
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -88,7 +114,6 @@ async fn main(spawner: Spawner) {
     let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    // Set GPIO2 as an output, and set its state high initially.
     let mut io = esp_hal::gpio::Io::new(peripherals.IO_MUX);
     io.set_interrupt_handler(hardware::handler);
 
@@ -103,8 +128,7 @@ async fn main(spawner: Spawner) {
     });
 
     let (wifi_controller, interfaces) = esp_radio::wifi::new(
-        RADIO_CONTROLLER
-            .init(esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller")),
+        RADIO_CONTROLLER.init(esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
         peripherals.WIFI,
         Default::default(),
     )
@@ -123,7 +147,7 @@ async fn main(spawner: Spawner) {
     let (stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(StackResources::<3>::new()),
+        NETWORK_STACK.init(StackResources::<4>::new()),
         seed,
     );
 
@@ -154,20 +178,33 @@ async fn main(spawner: Spawner) {
         );
     }
 
-    let events = get_events(trng, &mut rtc, stack).await;
+    log::info!("Microcontroller initilized");
 
-    let sclk = peripherals.GPIO12;
-    let mosi = peripherals.GPIO11; // SDA -> MOSI
-    let spi = peripherals.SPI2;
-    let dc = peripherals.GPIO18;
-    let rst = peripherals.GPIO4;
-    let busy = peripherals.GPIO15;
-    let cs = peripherals.GPIO10;
-    let (mut display, mut driver) = init::init_display(sclk, mosi, spi, dc, rst, busy, cs).await;
-    display::write_to_screen(&mut display, &mut driver, events, &mut rtc).await;
+    match BootType::get_boot_type() {
+        BootType::Display => {
+            let events = get_events(trng, &mut rtc, stack).await;
+
+            let sclk = peripherals.GPIO12;
+            let mosi = peripherals.GPIO11; // SDA -> MOSI
+            let spi = peripherals.SPI2;
+            let dc = peripherals.GPIO18;
+            let rst = peripherals.GPIO4;
+            let busy = peripherals.GPIO15;
+            let cs = peripherals.GPIO10;
+            let (mut display, mut driver) =
+                init::init_display(sclk, mosi, spi, dc, rst, busy, cs).await;
+            display::write_to_screen(&mut display, &mut driver, events, &mut rtc).await;
+        }
+        BootType::Config => {
+            let app = picoserve::make_static!(picoserve::AppRouter<server::AppProps>, server::AppProps.build_app());
+
+            for task_id in 0..WEB_TASK_POOL_SIZE {
+                spawner.must_spawn(web_task(task_id, stack, app));
+            }
+        }
+    }
 }
 
-// this is overkill but may be necessary
 fn extract_calendar_data(
     data: &str,
 ) -> heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS> {
