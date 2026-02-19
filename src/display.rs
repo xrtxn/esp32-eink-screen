@@ -230,3 +230,53 @@ fn draw_days(display: &mut Display420BlackWhite, count: u8) {
         .unwrap();
     }
 }
+
+use display_interface::WriteOnlyDataCommand;
+use display_interface_spi::SPIInterface;
+use embedded_hal::delay::DelayNs;
+use embedded_hal::digital::{InputPin as EhalInputPin, OutputPin as EhalOutputPin};
+use embedded_hal_bus::spi::ExclusiveDevice;
+use esp_hal::gpio::{InputPin, OutputPin};
+use esp_hal::peripherals::SPI2;
+use esp_hal::rtc_cntl::Rtc;
+use weact_studio_epd::WeActStudio420BlackWhiteDriver;
+
+pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
+    display: &mut Display420BlackWhite,
+    driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
+    events: crate::VcalsType<'_>,
+    rtc: &mut Rtc<'_>,
+) where
+    DI: WriteOnlyDataCommand,
+    BSY: EhalInputPin,
+    RST: EhalOutputPin,
+    DELAY: DelayNs,
+{
+    crate::display::draw_time_row_header(display);
+    let tz_offset = time::UtcOffset::from_hms(1, 0, 0).unwrap();
+    for event in events {
+        for eevent in event.events {
+            let start_dt = time::OffsetDateTime::to_offset(eevent.dtstart.unwrap(), tz_offset);
+            let end_dt = time::OffsetDateTime::to_offset(eevent.dtend.unwrap(), tz_offset);
+            let start_minute = crate::date_to_mins(start_dt);
+            let end_minute = crate::date_to_mins(end_dt);
+            log::info!(
+                "Event: {}, start_minute: {}, end_minute: {}",
+                eevent.summary.unwrap_or("No summary"),
+                start_minute,
+                end_minute
+            );
+            crate::display::draw_event(
+                display,
+                start_minute,
+                end_minute,
+                eevent.summary.unwrap_or("No summary"),
+            );
+        }
+    }
+    crate::display::add_footer_info(display);
+    driver.full_update(&display).unwrap();
+    log::info!("Display updated!");
+
+    crate::hardware::go_to_deep_sleep(rtc);
+}

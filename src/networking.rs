@@ -5,7 +5,6 @@ use embassy_net::tcp::client::TcpClient;
 use embassy_net::udp::PacketMetadata;
 use embassy_net::Stack;
 use esp_backtrace as _;
-use esp_println::println;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use reqwless::{Certificate, TlsReference};
@@ -83,7 +82,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
         .await
         .unwrap();
     let time = time::UtcDateTime::from_unix_timestamp(result.seconds.into()).unwrap();
-    println!("Current time: {:?}", time);
+    log::info!("Current time: {:?}", time);
     time
 }
 
@@ -153,14 +152,14 @@ pub async fn network_req(
         .body(body.as_bytes());
 
     let response = request.send(req_buffer).await.unwrap();
-    println!("Response status: {:?}", response.status);
+    log::debug!("Response status: {:?}", response.status);
 
     let res = response.body().read_to_end().await.unwrap();
 
     let res = match str::from_utf8(res) {
         Ok(v) => v,
         Err(_) => {
-            println!("Response body (hex): {:02x?}", res);
+            log::error!("Response body (hex): {:02x?}", res);
             todo!()
         }
     };

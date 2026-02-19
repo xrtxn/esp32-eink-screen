@@ -1,11 +1,7 @@
 use core::cell::RefCell;
 
 use critical_section::Mutex;
-use esp_hal::{
-    gpio::{Input, Output},
-    handler,
-    ram,
-};
+use esp_hal::{gpio::Input, handler, ram};
 
 const SLEEP_DURATION: u64 = 300;
 
@@ -23,7 +19,7 @@ pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
 #[handler]
 #[ram]
 pub fn handler() {
-    esp_println::println!("GPIO Interrupt");
+    log::info!("GPIO Interrupt");
 
     critical_section::with(|cs| {
         BUTTON
