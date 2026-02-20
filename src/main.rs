@@ -12,6 +12,7 @@ mod hardware;
 mod init;
 mod networking;
 mod server;
+mod storage;
 mod wifi;
 
 use crate::server::{web_task, WEB_TASK_POOL_SIZE};
@@ -40,7 +41,7 @@ use crate::hardware::go_to_deep_sleep;
 extern crate alloc;
 
 // This is one event every half our
-pub const MAX_DAILY_EVENTS: usize = 16;
+pub const MAX_DAILY_EVENTS: usize = 4;
 pub const MAX_VCALENDAR_BYTES: usize = 2000;
 
 const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
@@ -59,7 +60,7 @@ static CAL_STRINGS: StaticCell<
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast))]
-static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
+static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
 
 type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
@@ -101,6 +102,13 @@ async fn main(spawner: Spawner) {
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+
+    let config = storage::NvsConfig {
+        ssid: "your-ssid",
+        password: "your-password",
+    };
+    storage::test_flash(peripherals.FLASH, config);
+    panic!();
 
     let prev_boot_count = BOOT_COUNT.fetch_add(1, Ordering::SeqCst);
     log::info!("Boot count: {}", prev_boot_count + 1);
