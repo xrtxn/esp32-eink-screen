@@ -7,3 +7,7 @@ SDA - 11
 
 LED - 48
 LED simple - 41
+
+Esp32-s3 dev board memory layout
+dram2_seg = 0x3FCED710 - 0x3FCDB700 = 73774 bytes = 73 kb
+dram_seg = 0x3FCDB700 - 0x3FC88000 = 341760 bytes = 341 kb

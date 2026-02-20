@@ -1,0 +1,12 @@
+<!doctype html>
+<head>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<html>
+    <body>
+        <h2>HTMX Example</h2>
+        <script src="./htmx.min.js"></script>
+        <!-- have a button POST a click via AJAX -->
+        <button hx-post="/clicked" hx-swap="outerHTML">Click Me</button>
+    </body>
+</html>

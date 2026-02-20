@@ -14,14 +14,14 @@ mod networking;
 mod server;
 mod wifi;
 
-use crate::server::{WEB_TASK_POOL_SIZE, web_task};
-use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use picoserve::AppBuilder;
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
-use embassy_net::StackResources;
 use embassy_net::tcp::client::TcpClient;
+use embassy_net::StackResources;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
 use esp_hal::{
@@ -59,7 +59,7 @@ static CAL_STRINGS: StaticCell<
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast))]
-static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
+static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 
 type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
@@ -105,6 +105,7 @@ async fn main(spawner: Spawner) {
     let prev_boot_count = BOOT_COUNT.fetch_add(1, Ordering::SeqCst);
     log::info!("Boot count: {}", prev_boot_count + 1);
 
+    // this affects the remaining stack
     esp_alloc::heap_allocator!(size: 64 * 1024);
     // SSL needs more RAM
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
