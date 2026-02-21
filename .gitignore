@@ -17,3 +17,4 @@ target/
 /passwd.txt
 /.direnv
 **/*.env
+/static/htmx*

@@ -103,12 +103,8 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    let config = storage::NvsConfig {
-        ssid: "your-ssid",
-        password: "your-password",
-    };
-    storage::test_flash(peripherals.FLASH, config);
-    panic!();
+    let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
+    storage::read_config(flash).await;
 
     let prev_boot_count = BOOT_COUNT.fetch_add(1, Ordering::SeqCst);
     log::info!("Boot count: {}", prev_boot_count + 1);

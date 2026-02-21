@@ -42,6 +42,8 @@
               pkgs.pkg-config
               pkgs.stdenv.cc
               pkgs.systemdMinimal
+
+              pkgs.cargo-bloat
             ];
 
             shellHook = ''

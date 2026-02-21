@@ -112,6 +112,7 @@ pub async fn network_req(
     let mut client = HttpClient::new_with_tls(tcp_client, &dns_socket, tls_config);
 
     // todo get date and time based on user timezone, caldav only accepts utc time
+    // also limit to a few hours
     let body: heapless::String<554> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">

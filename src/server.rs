@@ -26,6 +26,22 @@ impl AppBuilder for AppProps {
                     "../static/index.html"
                 ))),
             )
+            .nest_service(
+                "/static",
+                const {
+                    picoserve::response::Directory {
+                        files: &[(
+                            "htmx.min.js",
+                            picoserve::response::File::with_content_type_and_headers(
+                                "application/javascript; charset=utf-8",
+                                include_bytes!("../static/htmx.min.js.gz"),
+                                &[("Content-Encoding", "gzip")],
+                            ),
+                        )],
+                        ..picoserve::response::Directory::DEFAULT
+                    }
+                },
+            )
     }
 }
 

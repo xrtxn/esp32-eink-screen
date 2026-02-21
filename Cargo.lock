@@ -1482,6 +1482,7 @@ dependencies = [
  "display-interface",
  "display-interface-spi",
  "dotenvy",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-net",
  "embassy-time",
@@ -1506,6 +1507,7 @@ dependencies = [
  "profont",
  "reqwless",
  "roxmltree",
+ "sequential-storage",
  "serde",
  "smoltcp",
  "sntpc",
@@ -1811,6 +1813,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af2455f757db2b292a9b1768c4b70186d443bcb3b316252d6b540aec1cd89ed"
 dependencies = [
  "hash32 0.3.1",
+ "serde_core",
  "stable_deref_trait",
 ]
 
@@ -2810,6 +2813,17 @@ checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 dependencies = [
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "sequential-storage"
+version = "7.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4580ee0fa08cd41bee9f5b50ed309877e18735370fd4eef5766cc82863ef772"
+dependencies = [
+ "embedded-storage-async",
+ "postcard",
+ "serde",
 ]
 
 [[package]]

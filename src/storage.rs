@@ -1,30 +1,63 @@
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct NvsConfig<'a> {
-    pub ssid: &'a str,
-    pub password: &'a str,
-}
+use embassy_embedded_hal::adapter::BlockingAsync;
+use esp_storage::FlashStorage;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct Caldav<'a> {
-    pub url: &'a str,
-    pub username: &'a str,
-    pub password: &'a str,
+pub struct NvsConfig {
+    pub ssid: heapless::String<32>,
+    pub password: heapless::String<32>,
+    pub caldav: Caldav,
 }
 
-pub(crate) fn test_flash(flash_prp: esp_hal::peripherals::FLASH<'_>, config: NvsConfig) {
-    let _flash = esp_storage::FlashStorage::new(flash_prp);
-    let dest = 0x9000;
+impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
 
-    let data: u32 = 0xDEADBEEF;
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct Caldav {
+    pub url: heapless::String<128>,
+    pub username: heapless::String<32>,
+    pub password: heapless::String<32>,
+}
 
-    let data_ptr = &data as *const u32;
-    let len = core::mem::size_of::<u32>() as u32;
-    unsafe { esp_storage::ll::spiflash_write(dest, data_ptr, len) }.unwrap();
+const NVS_STORAGE_START: u32 = 0x9000;
+const NVS_STORAGE_SIZE: u32 = 0x6000;
+const NVS_RANGE: core::ops::Range<u32> = NVS_STORAGE_START..NVS_STORAGE_START + NVS_STORAGE_SIZE;
 
-    let mut read_val = 0_u32;
-    let read_buf = &mut read_val as *mut u32;
+const CONFIG_KEY: u8 = 1;
 
-    unsafe { esp_storage::ll::spiflash_read(dest, read_buf, len) }.unwrap();
+pub(crate) async fn read_config(flashstg: FlashStorage<'_>) {
+    let mut data_buffer = [0u8; 256];
 
-    log::info!("Read data: {:#X}", read_val);
+    let async_flash = BlockingAsync::new(flashstg);
+
+    let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
+        async_flash,
+        const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
+        sequential_storage::cache::NoCache::new(),
+    );
+
+    let r = l
+        .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
+        .await;
+
+    log::info!("Read config: {:?}", r);
+}
+
+pub(crate) async fn write_config(flash_stg: FlashStorage<'_>, config: NvsConfig) {
+    let async_flash = BlockingAsync::new(flash_stg);
+
+    let mut data_buffer = [0u8; 256];
+
+    let mut serialized_buf = [0u8; 128];
+    let _ = postcard::to_slice(&config, &mut serialized_buf).expect("Failed to serialize config");
+
+    let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
+        async_flash,
+        const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
+        sequential_storage::cache::NoCache::new(),
+    );
+
+    l.store_item(&mut data_buffer, &CONFIG_KEY, &config)
+        .await
+        .unwrap();
+
+    log::info!("Config written to flash");
 }
