@@ -1,26 +1,50 @@
 use core::cell::RefCell;
 
 use critical_section::Mutex;
-use esp_hal::{gpio::Input, handler, ram};
+use esp_hal::{
+    gpio::{AnyPin, Input},
+    handler, ram,
+    rtc_cntl::sleep::{Ext0WakeupSource, TimerWakeupSource, WakeupLevel},
+    system::{wakeup_cause, SleepSource},
+};
+
+use crate::{BootType, BOOT_TYPES};
 
 const SLEEP_DURATION: u64 = 300;
 
-pub static BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
+pub static BUTTON: Mutex<RefCell<Option<Input<'static>>>> = Mutex::new(RefCell::new(None));
 
-/// After this function was called, the hardware goes into deep sleep, only the RTC clock is kept running, and it's variables are kept.
-/// After the duration elapsed, the hardware will wake up and start executing from the beginning of the program.
 pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
     let sleep_time = core::time::Duration::from_secs(SLEEP_DURATION);
-    let wake_sources = esp_hal::rtc_cntl::sleep::TimerWakeupSource::new(sleep_time);
+    let timer_wakeup = TimerWakeupSource::new(sleep_time);
+
+    let had_button = critical_section::with(|cs| BUTTON.borrow_ref_mut(cs).take().is_some());
+
     log::info!("Going to sleep for {:?}...", sleep_time);
-    rtc.sleep_deep(&[&wake_sources]);
+
+    if had_button {
+        let pin: AnyPin<'static> = unsafe { AnyPin::steal(0) };
+        let ext0 = Ext0WakeupSource::new(pin, WakeupLevel::Low);
+        rtc.sleep_deep(&[&timer_wakeup, &ext0]);
+    } else {
+        rtc.sleep_deep(&[&timer_wakeup]);
+    }
+}
+
+// Sets the boot type based on wakeup cause
+pub(crate) fn apply_wakeup_boot_type() {
+    match wakeup_cause() {
+        // GPIO0 button was pressed
+        SleepSource::Ext0 => BootType::set_boot_type(BootType::Config),
+        // Timer expired, or normal boot
+        SleepSource::Timer | SleepSource::Undefined => BootType::set_boot_type(BootType::Display),
+        _ => {}
+    }
 }
 
 #[handler]
 #[ram]
 pub fn handler() {
-    log::info!("GPIO Interrupt");
-
     critical_section::with(|cs| {
         BUTTON
             .borrow_ref_mut(cs)
@@ -28,4 +52,17 @@ pub fn handler() {
             .unwrap()
             .clear_interrupt();
     });
+    BOOT_TYPES
+        .fetch_update(
+            core::sync::atomic::Ordering::Relaxed,
+            core::sync::atomic::Ordering::Relaxed,
+            |x| {
+                Some(match BootType::swap_type(x) {
+                    BootType::Display => BootType::Config as u8,
+                    BootType::Config => BootType::Display as u8,
+                })
+            },
+        )
+        .unwrap();
+    esp_hal::system::software_reset();
 }

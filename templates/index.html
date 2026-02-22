@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Configuration</title>
+
+        <link rel="stylesheet" href="static/pico.min.css" />
+
+        <style>
+            body.is-loading {
+                opacity: 0;
+                visibility: hidden;
+            }
+
+            body {
+                opacity: 1;
+                visibility: visible;
+                transition:
+                    opacity 0.3s ease-in,
+                    visibility 0.3s ease-in;
+            }
+        </style>
+    </head>
+
+    <body class="is-loading">
+        <div class="container">
+            <h1>Configure Wifi</h1>
+            <fieldset>
+                <label>
+                    Wifi SSID
+                    <input
+                        name="ssid"
+                        placeholder="SSID"
+                        minlength="1"
+                        maxlength="32"
+                    />
+                </label>
+                <label>
+                    Password
+                    <input
+                        type="password"
+                        name="wifi-password"
+                        placeholder="Password"
+                        autocomplete="current-password"
+                        minlength="8"
+                        maxlength="32"
+                    />
+                </label>
+            </fieldset>
+            <input type="submit" value="Submit" />
+        </div>
+        <script>
+            // only show site after it was loaded in completely
+            window.addEventListener("load", function () {
+                document.body.classList.remove("is-loading");
+                window.removeEventListener("load", arguments.callee);
+            });
+        </script>
+    </body>
+</html>

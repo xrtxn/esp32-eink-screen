@@ -6,8 +6,8 @@ use embedded_graphics::text::Text;
 use heapless::format;
 use log::info;
 use profont::PROFONT_10_POINT;
-use weact_studio_epd::Color;
 use weact_studio_epd::graphics::Display420BlackWhite;
+use weact_studio_epd::Color;
 
 const DAYS_TO_DISPLAY: u8 = 3;
 const START_DISPLAY_HOUR: u8 = 0;

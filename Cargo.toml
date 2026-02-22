@@ -69,6 +69,7 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
 ] }
 
 critical-section = "1.2.0"
+portable-atomic = { version = "1", features = ["critical-section"] }
 static_cell = { version = "2.1.1", features = ["nightly"] }
 
 weact-studio-epd = { git = "https://github.com/xrtxn/weact-studio-epd.git", branch = "feat/4.2_support", features = ["blocking"] }
@@ -94,13 +95,15 @@ sntpc = { version = "0.8", default-features = false }
 sntpc-net-embassy = "0.8"
 
 # Web server
-picoserve = { version = "0.18.0", features = ["embassy", "log"] }
+picoserve = { version = "0.18.0", features = ["embassy", "log", "alloc"] }
+askama = { version = "0.15.4", default-features = false, features=["derive", "alloc"] }
 
 # NVS
 postcard = "1.1.0"
 serde = { version = "1.0.*", default-features = false, features = ["derive"] }
 esp-storage = { version = "0.8.1", features = ["esp32s3"] }
 sequential-storage = { version = "7.1.0", features = ["postcard"] }
+embassy-sync = "0.7.2"
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

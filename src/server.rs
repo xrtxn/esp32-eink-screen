@@ -1,6 +1,11 @@
-use picoserve::routing::get_service;
+use core::cell::RefCell;
+
+use askama::Template as _;
+use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
 use static_cell::StaticCell;
+
+use crate::storage;
 
 static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
 
@@ -13,28 +18,37 @@ static TCP_TX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
 static HTTP_BUFFERS: [StaticCell<[u8; 2048]>; WEB_TASK_POOL_SIZE] =
     [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
 
-pub struct AppProps;
+pub(crate) struct AppProps {
+    pub flash_storage: &'static RefCell<FlashStorage<'static>>,
+}
 
 impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
+        // &'static RefCell<...> is Copy, so the closure is AsyncFn (not just AsyncFnMut)
+        let flash = self.flash_storage;
+
         picoserve::Router::new()
             .route(
                 "/",
-                get_service(picoserve::response::File::html(include_str!(
-                    "../static/index.html"
-                ))),
+                picoserve::routing::get(move || config_page_handler(flash)),
+            )
+            .route(
+                "/api/change_config",
+                picoserve::routing::post(async || {
+                    log::info!("Received config change request");
+                }),
             )
             .nest_service(
                 "/static",
                 const {
                     picoserve::response::Directory {
                         files: &[(
-                            "htmx.min.js",
+                            "pico.min.css",
                             picoserve::response::File::with_content_type_and_headers(
-                                "application/javascript; charset=utf-8",
-                                include_bytes!("../static/htmx.min.js.gz"),
+                                "text/css; charset=utf-8",
+                                include_bytes!("../static/pico.min.css.gz"),
                                 &[("Content-Encoding", "gzip")],
                             ),
                         )],
@@ -60,4 +74,18 @@ pub async fn web_task(
         .listen_and_serve(task_id, stack, port, tcp_rx_buffer, tcp_tx_buffer)
         .await
         .into_never()
+}
+
+async fn config_page_handler(
+    flash: &'static RefCell<FlashStorage<'static>>,
+) -> impl picoserve::response::IntoResponse {
+    let cfg = storage::read_config(flash).await.unwrap_or_default();
+
+    // Render the template into an allocated String
+    let rendered_html: alloc::string::String = cfg.render().unwrap();
+
+    (
+        [("Content-Type", "text/html; charset=utf-8")],
+        rendered_html,
+    )
 }

@@ -16,8 +16,8 @@ mod storage;
 mod wifi;
 
 use crate::server::{web_task, WEB_TASK_POOL_SIZE};
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use picoserve::AppBuilder;
+use portable_atomic::{AtomicU32, AtomicU8};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -36,7 +36,7 @@ use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
 use esp_backtrace as _;
 
-use crate::hardware::go_to_deep_sleep;
+use crate::hardware::{apply_wakeup_boot_type, go_to_deep_sleep};
 
 extern crate alloc;
 
@@ -56,11 +56,11 @@ static CAL_STRINGS: StaticCell<
     heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS>,
 > = StaticCell::new();
 
-#[esp_hal::ram(unstable(rtc_fast))]
+#[esp_hal::ram(unstable(rtc_fast, persistent))]
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
-#[esp_hal::ram(unstable(rtc_fast))]
-static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
+#[esp_hal::ram(unstable(rtc_fast, persistent))]
+pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 
 type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
@@ -74,19 +74,27 @@ type EpdDriver = WeActStudio420BlackWhiteDriver<
     Delay,
 >;
 
-enum BootType {
+pub(crate) enum BootType {
     Display = 0,
     Config = 1,
 }
 
 impl BootType {
     #[allow(unused)]
-    fn set_boot_type(val: BootType) {
-        BOOT_TYPES.store(val as u8, Ordering::Relaxed);
+    pub(crate) fn set_boot_type(val: BootType) {
+        BOOT_TYPES.store(val as u8, core::sync::atomic::Ordering::Relaxed);
     }
 
-    fn get_boot_type() -> BootType {
-        match BOOT_TYPES.load(Ordering::Relaxed) {
+    pub(crate) fn get_boot_type() -> BootType {
+        match BOOT_TYPES.load(core::sync::atomic::Ordering::Relaxed) {
+            0 => BootType::Display,
+            1 => BootType::Config,
+            _ => panic!(),
+        }
+    }
+
+    pub(crate) fn swap_type(val: u8) -> BootType {
+        match val {
             0 => BootType::Display,
             1 => BootType::Config,
             _ => panic!(),
@@ -103,10 +111,13 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
+    apply_wakeup_boot_type();
+
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
+    let flash = storage::init_flash(flash);
     storage::read_config(flash).await;
 
-    let prev_boot_count = BOOT_COUNT.fetch_add(1, Ordering::SeqCst);
+    let prev_boot_count = BOOT_COUNT.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
     log::info!("Boot count: {}", prev_boot_count + 1);
 
     // this affects the remaining stack
@@ -203,7 +214,10 @@ async fn main(spawner: Spawner) {
         BootType::Config => {
             let app = picoserve::make_static!(
                 picoserve::AppRouter<server::AppProps>,
-                server::AppProps.build_app()
+                server::AppProps {
+                    flash_storage: flash
+                }
+                .build_app()
             );
 
             for task_id in 0..WEB_TASK_POOL_SIZE {
