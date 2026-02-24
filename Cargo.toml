@@ -95,8 +95,8 @@ sntpc = { version = "0.8", default-features = false }
 sntpc-net-embassy = "0.8"
 
 # Web server
-picoserve = { version = "0.18.0", features = ["embassy", "log", "alloc"] }
-askama = { version = "0.15.4", default-features = false, features=["derive", "alloc"] }
+picoserve = { version = "0.18.0", features = ["embassy", "log", "alloc", "json"] }
+askama = { version = "0.15.4", default-features = false, features=["derive", "alloc", "config"] }
 
 # NVS
 postcard = "1.1.0"

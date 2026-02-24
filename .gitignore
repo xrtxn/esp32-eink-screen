@@ -16,4 +16,4 @@ target/
 #.idea/
 /.direnv
 **/*.env
-/static/pico*
+web/static/pico*

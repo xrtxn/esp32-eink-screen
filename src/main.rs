@@ -60,7 +60,7 @@ static CAL_STRINGS: StaticCell<
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
-pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
+pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
 
 type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
@@ -80,7 +80,6 @@ pub(crate) enum BootType {
 }
 
 impl BootType {
-    #[allow(unused)]
     pub(crate) fn set_boot_type(val: BootType) {
         BOOT_TYPES.store(val as u8, core::sync::atomic::Ordering::Relaxed);
     }

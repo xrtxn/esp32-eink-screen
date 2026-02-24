@@ -35,10 +35,15 @@ impl AppBuilder for AppProps {
                 picoserve::routing::get(move || config_page_handler(flash)),
             )
             .route(
-                "/api/change_config",
-                picoserve::routing::post(async || {
-                    log::info!("Received config change request");
-                }),
+                "/api/config",
+                picoserve::routing::post(
+                    move |picoserve::extract::Json(config): picoserve::extract::Json<
+                        storage::NvsConfig,
+                    >| async move {
+                        log::info!("Received config change request: {:?}", config);
+                        storage::write_config(flash, config).await;
+                    },
+                ),
             )
             .nest_service(
                 "/static",
@@ -48,7 +53,7 @@ impl AppBuilder for AppProps {
                             "pico.min.css",
                             picoserve::response::File::with_content_type_and_headers(
                                 "text/css; charset=utf-8",
-                                include_bytes!("../static/pico.min.css.gz"),
+                                include_bytes!("../web/static/pico.min.css.gz"),
                                 &[("Content-Encoding", "gzip")],
                             ),
                         )],

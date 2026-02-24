@@ -36,8 +36,9 @@ pub(crate) fn apply_wakeup_boot_type() {
     match wakeup_cause() {
         // GPIO0 button was pressed
         SleepSource::Ext0 => BootType::set_boot_type(BootType::Config),
-        // Timer expired, or normal boot
-        SleepSource::Timer | SleepSource::Undefined => BootType::set_boot_type(BootType::Display),
+        // Timer expired
+        SleepSource::Timer => BootType::set_boot_type(BootType::Display),
+        // For other sources (like Undefined/Software Reset), we keep the current state
         _ => {}
     }
 }

@@ -21,7 +21,7 @@ pub(crate) fn init_flash(flash: FlashStorage<'static>) -> &'static RefCell<Flash
 pub struct NvsConfig {
     pub ssid: heapless::String<32>,
     pub password: heapless::String<32>,
-    pub caldav: Caldav,
+    // pub caldav: Caldav,
 }
 
 impl Default for NvsConfig {
@@ -29,7 +29,7 @@ impl Default for NvsConfig {
         Self {
             ssid: Default::default(),
             password: Default::default(),
-            caldav: Default::default(),
+            // caldav: Default::default(),
         }
     }
 }
@@ -59,13 +59,13 @@ pub(crate) async fn read_config(flash_cell: &RefCell<FlashStorage<'static>>) -> 
 
     let async_flash = BlockingAsync::new(&mut *borrow);
 
-    let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
+    let mut ms = sequential_storage::map::MapStorage::<u8, _, _>::new(
         async_flash,
         const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
         sequential_storage::cache::NoCache::new(),
     );
 
-    let nvs_config = l
+    let nvs_config = ms
         .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
         .await
         .ok()

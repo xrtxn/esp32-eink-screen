@@ -120,10 +120,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7661ff56517787343f376f75db037426facd7c8d3049cef8911f1e75016f3a37"
 dependencies = [
  "askama_parser",
+ "basic-toml",
  "memchr",
  "proc-macro2",
  "quote",
  "rustc-hash",
+ "serde",
+ "serde_derive",
  "syn 2.0.114",
 ]
 
@@ -143,6 +146,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d62d674238a526418b30c0def480d5beadb9d8964e7f38d635b03bf639c704c"
 dependencies = [
  "rustc-hash",
+ "serde",
+ "serde_derive",
  "unicode-ident",
  "winnow",
 ]
@@ -185,6 +190,15 @@ name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+
+[[package]]
+name = "basic-toml"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba62675e8242a4c4e806d12f11d136e626e6c8361d6b829310732241652a178a"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bindgen"
@@ -2368,7 +2382,9 @@ dependencies = [
  "log",
  "picoserve_derive",
  "pin-project",
+ "ryu",
  "serde",
+ "serde-json-core",
  "thiserror 2.0.18",
 ]
 
@@ -2893,6 +2909,17 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-json-core"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b81787e655bd59cecadc91f7b6b8651330b2be6c33246039a65e5cd6f4e0828"
+dependencies = [
+ "heapless 0.8.0",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
