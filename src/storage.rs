@@ -16,25 +16,46 @@ pub(crate) fn init_flash(flash: FlashStorage<'static>) -> &'static RefCell<Flash
     FLASH.init(RefCell::new(flash))
 }
 
-#[derive(serde::Serialize, serde::Deserialize, askama::Template, Debug)]
-#[template(path = "index.html")]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct NvsConfig {
-    pub ssid: heapless::String<32>,
-    pub password: heapless::String<32>,
+    pub wifi: Option<WifiCreds>,
     // pub caldav: Caldav,
+}
+
+impl NvsConfig {
+    pub fn new(wifi: Option<WifiCreds>) -> Self {
+        Self {
+            wifi,
+            // caldav: Default::default(),
+        }
+    }
 }
 
 impl Default for NvsConfig {
     fn default() -> Self {
         Self {
-            ssid: Default::default(),
-            password: Default::default(),
+            wifi: None,
             // caldav: Default::default(),
         }
     }
 }
 
 impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct WifiCreds {
+    pub ssid: heapless::String<32>,
+    pub password: heapless::String<32>,
+}
+
+impl WifiCreds {
+    pub fn new(ssid: &str, password: &str) -> Self {
+        Self {
+            ssid: heapless::String::try_from(ssid).unwrap(),
+            password: heapless::String::try_from(password).unwrap(),
+        }
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Caldav {

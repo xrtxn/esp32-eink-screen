@@ -1,11 +1,12 @@
 use core::cell::RefCell;
 
-use askama::Template as _;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
 use static_cell::StaticCell;
 
 use crate::storage;
+
+const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 
 static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
 
@@ -45,22 +46,7 @@ impl AppBuilder for AppProps {
                     },
                 ),
             )
-            .nest_service(
-                "/static",
-                const {
-                    picoserve::response::Directory {
-                        files: &[(
-                            "pico.min.css",
-                            picoserve::response::File::with_content_type_and_headers(
-                                "text/css; charset=utf-8",
-                                include_bytes!("../web/static/pico.min.css.gz"),
-                                &[("Content-Encoding", "gzip")],
-                            ),
-                        )],
-                        ..picoserve::response::Directory::DEFAULT
-                    }
-                },
-            )
+
     }
 }
 
@@ -82,15 +68,14 @@ pub async fn web_task(
 }
 
 async fn config_page_handler(
-    flash: &'static RefCell<FlashStorage<'static>>,
+    _flash: &'static RefCell<FlashStorage<'static>>,
 ) -> impl picoserve::response::IntoResponse {
-    let cfg = storage::read_config(flash).await.unwrap_or_default();
-
-    // Render the template into an allocated String
-    let rendered_html: alloc::string::String = cfg.render().unwrap();
-
     (
-        [("Content-Type", "text/html; charset=utf-8")],
-        rendered_html,
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Encoding", "gzip"),
+            ("Content-Length", env!("INDEX_HTML_GZ_LEN")),
+        ],
+        INDEX_HTML_GZ,
     )
 }

@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use embassy_net::Runner;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
@@ -7,7 +8,11 @@ use esp_radio::wifi::{
 };
 
 #[embassy_executor::task]
-pub async fn connection(mut controller: WifiController<'static>) {
+pub async fn connection(
+    mut controller: WifiController<'static>,
+    ssid: heapless::String<32>,
+    pass: heapless::String<32>,
+) {
     log::info!("Device capabilities: {:?}", controller.capabilities());
     loop {
         if esp_radio::wifi::sta_state() == WifiStaState::Connected {
@@ -17,13 +22,11 @@ pub async fn connection(mut controller: WifiController<'static>) {
             Timer::after(Duration::from_millis(1000)).await
         }
 
-        let ssid = env!("WIFI_SSID");
-
         if !matches!(controller.is_started(), Ok(true)) {
             let station_config = ModeConfig::Client(
                 ClientConfig::default()
-                    .with_ssid(alloc::string::String::from(ssid))
-                    .with_password(alloc::string::String::from(env!("WIFI_PASS"))),
+                    .with_ssid(ssid.to_string())
+                    .with_password(pass.to_string()),
             );
             controller.set_config(&station_config).unwrap();
             log::info!("Starting wifi");

@@ -16,6 +16,8 @@ mod storage;
 mod wifi;
 
 use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use crate::storage::NvsConfig;
+use esp_radio::wifi::PowerSaveMode;
 use picoserve::AppBuilder;
 use portable_atomic::{AtomicU32, AtomicU8};
 
@@ -110,11 +112,26 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    apply_wakeup_boot_type();
+    //apply_wakeup_boot_type();
 
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
-    storage::read_config(flash).await;
+    let creds = storage::read_config(flash).await;
+
+    let creds = match creds {
+        Some(ok) => ok,
+        #[cfg(debug_assertions)]
+        None => {
+            let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
+            NvsConfig::new(Some(wifi_creds))
+        }
+        #[cfg(not(debug_assertions))]
+        None => {
+            // no credentials set, boot to config mode
+            BootType::set_boot_type(BootType::Config);
+            esp_hal::system::software_reset();
+        }
+    };
 
     let prev_boot_count = BOOT_COUNT.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
     log::info!("Boot count: {}", prev_boot_count + 1);
@@ -142,10 +159,13 @@ async fn main(spawner: Spawner) {
         hardware::BUTTON.borrow_ref_mut(cs).replace(button)
     });
 
+    let wifi_config =
+        esp_radio::wifi::Config::default().with_power_save_mode(PowerSaveMode::Minimum);
+
     let (wifi_controller, interfaces) = esp_radio::wifi::new(
         RADIO_CONTROLLER.init(esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
         peripherals.WIFI,
-        Default::default(),
+        wifi_config,
     )
     .expect("Failed to initialize Wi-Fi controller");
 
@@ -166,7 +186,15 @@ async fn main(spawner: Spawner) {
         seed,
     );
 
-    spawner.spawn(wifi::connection(wifi_controller)).ok();
+    let wifi_creds = creds.wifi.unwrap();
+
+    spawner
+        .spawn(wifi::connection(
+            wifi_controller,
+            wifi_creds.ssid,
+            wifi_creds.password,
+        ))
+        .ok();
     spawner.spawn(wifi::net_task(runner)).ok();
 
     {

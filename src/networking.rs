@@ -1,9 +1,9 @@
 use core::fmt::Write;
 use core::net::{SocketAddr, SocketAddrV4};
-use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::udp::PacketMetadata;
+use embassy_net::Stack;
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
@@ -54,7 +54,7 @@ impl sntpc::NtpTimestampGenerator for NtpTimestamp {
 
 pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     use embassy_net::udp::UdpSocket;
-    use sntpc::{NtpContext, get_time};
+    use sntpc::{get_time, NtpContext};
 
     let rx_meta = RX_META.init([PacketMetadata::EMPTY; 16]);
     let rx_buffer = RX_BUFFER.init([0; 4096]);
@@ -137,6 +137,7 @@ pub async fn network_req(
     )
     .unwrap();
 
+    // todo remove from prod
     let origin = env!("ORIGIN");
     let username = env!("CALDAV_USER");
     let password = env!("CALDAV_PASS");

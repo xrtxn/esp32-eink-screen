@@ -11,9 +11,43 @@ fn main() {
 
     load_env();
     add_git_info();
+    build_index_html();
     linker_be_nice();
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");
+}
+
+fn build_index_html() {
+    println!("cargo:rerun-if-changed=web/index.html");
+    println!("cargo:rerun-if-changed=web/static/pico.min.css");
+
+    let html = std::fs::read_to_string("web/index.html")
+        .expect("Failed to read web/index.html");
+    let css = std::fs::read_to_string("web/static/pico.min.css")
+        .expect("Failed to read web/static/pico.min.css");
+
+    // Replace the placeholder that was used by the Askama template
+    let final_html = html.replace("            /* CSS_PLACEHOLDER */", &css);
+
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_html = format!("{out_dir}/index.html");
+    let out_gz = format!("{out_dir}/index.html.gz");
+
+    std::fs::write(&out_html, final_html.as_bytes())
+        .expect("Failed to write built index.html");
+
+    // Remove any previous .gz so gzip -k doesn't refuse to overwrite
+    let _ = std::fs::remove_file(&out_gz);
+
+    Command::new("gzip")
+        .args(["-9", "-k", &out_html])
+        .status()
+        .expect("Failed to gzip index.html — is gzip installed?");
+
+    let gz_len = std::fs::metadata(&out_gz)
+        .expect("Failed to stat gzipped index.html")
+        .len();
+    println!("cargo:rustc-env=INDEX_HTML_GZ_LEN={gz_len}");
 }
 
 fn linker_be_nice() {
