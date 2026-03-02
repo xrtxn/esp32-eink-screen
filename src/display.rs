@@ -5,16 +5,19 @@ use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
 use heapless::format;
 use log::info;
-use profont::PROFONT_10_POINT;
-use weact_studio_epd::Color;
 use weact_studio_epd::graphics::Display420BlackWhite;
+use weact_studio_epd::Color;
 
 const DAYS_TO_DISPLAY: u8 = 3;
 const START_DISPLAY_HOUR: u8 = 0;
 const HOURS_TO_DISPLAY: u8 = 24;
 const MINUTES_IN_A_DAY: u16 = 1440;
-const EVENT_FONT: MonoFont = PROFONT_10_POINT;
+const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
+const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = 40;
+const TEXT_STYLE: MonoTextStyle<'static, Color> = MonoTextStyle::new(&EVENT_FONT, Color::Black);
+const MINI_TEXT_STYLE: MonoTextStyle<'static, Color> =
+    MonoTextStyle::new(&EVENT_FONT, Color::Black);
 
 pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
     use embedded_graphics::text::{Baseline, Text};
@@ -27,17 +30,19 @@ pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
         build_info.push_str("*").unwrap();
     }
 
-    let font = profont::PROFONT_7_POINT;
-    let text_style = MonoTextStyle::new(&font, Color::Black);
+    let text_style = embedded_graphics::text::TextStyleBuilder::new()
+        .alignment(embedded_graphics::text::Alignment::Right)
+        .baseline(embedded_graphics::text::Baseline::Bottom)
+        .build();
 
-    let br = display.bounding_box().bottom_right().unwrap();
-
-    let text_width = build_info.chars().count() as i32 * font.character_size.width as i32;
-    let pos = Point::new(br.x - text_width, br.y - font.character_size.height as i32);
-
-    Text::with_baseline(&build_info, pos, text_style, Baseline::Top)
-        .draw(display)
-        .unwrap();
+    Text::with_text_style(
+        &build_info,
+        display.bounding_box().bottom_right().unwrap(),
+        MINI_TEXT_STYLE,
+        text_style,
+    )
+    .draw(display)
+    .unwrap();
 }
 
 fn calculate_padding(full_size: u32, text_size: i32, item_count: i32) -> i32 {
@@ -63,7 +68,6 @@ pub(crate) fn draw_time_row_header(display: &mut Display420BlackWhite) {
     let padding = calculate_padding(display.size().height, text_height, 24);
     info!("padding: {}", padding);
 
-    let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
     let position = display.bounding_box().top_left;
 
     for hour in START_DISPLAY_HOUR..=HOURS_TO_DISPLAY {
@@ -71,7 +75,7 @@ pub(crate) fn draw_time_row_header(display: &mut Display420BlackWhite) {
         Text::with_baseline(
             &fmt_hour,
             position + Point::new(0, exceeded_height),
-            text_style,
+            TEXT_STYLE,
             embedded_graphics::text::Baseline::Top,
         )
         .draw(display)
@@ -113,10 +117,13 @@ fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
     (one_minute * start_minute as f32) as u32
 }
 
-fn calculate_text_width(mut char_count: u16) -> u16 {
-    char_count += 1;
-    (char_count * EVENT_FONT.character_size.width as u16)
-        + ((char_count - 1) * EVENT_FONT.character_spacing as u16)
+fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
+    if char_count == 0 {
+        return 0;
+    }
+
+    (char_count * font.character_size.width as u16)
+        + ((char_count - 1) * font.character_spacing as u16)
 }
 
 /// Calculates the ending position of the event based on the screen size
@@ -134,8 +141,25 @@ fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
     (one_minute * end_minute as f32) as u32
 }
 
-pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, rtc: Rtc<'_>) {
-    rtc.current_time_us();
+pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, rtc: &Rtc<'_>) {
+    let time = hardware::get_time(rtc);
+    log::info!("Calendar sync time: {}", time);
+    let fmt_time: heapless::String<11> =
+        format!("Sync: {:02}:{:02}", time.hour(), time.minute()).unwrap();
+
+    let text_style = embedded_graphics::text::TextStyleBuilder::new()
+        .alignment(embedded_graphics::text::Alignment::Right)
+        .baseline(embedded_graphics::text::Baseline::Top)
+        .build();
+
+    let pos = Point::new(
+        display.bounding_box().bottom_right().unwrap().x,
+        display.bounding_box().top_left.y,
+    );
+
+    Text::with_text_style(&fmt_time, pos, MINI_TEXT_STYLE, text_style)
+        .draw(display)
+        .unwrap();
 }
 
 pub(crate) fn draw_event(
@@ -145,7 +169,7 @@ pub(crate) fn draw_event(
     text: &str,
 ) {
     let x = START_POS;
-    let end_x = calculate_text_width(text.chars().count() as u16);
+    let end_x = calculate_text_width(text.chars().count() as u16, EVENT_FONT);
 
     let y = calculate_start_height(display.size().height, start_minute);
 
@@ -161,7 +185,6 @@ pub(crate) fn draw_event(
         text, x, y, end_y
     );
 
-    let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
     let char_width = EVENT_FONT.character_size.width;
     let max_chars_per_line = (end_x - 4) as u32 / char_width;
 
@@ -198,7 +221,7 @@ pub(crate) fn draw_event(
     Text::with_baseline(
         &wrapped_text,
         Point::new(x + 2, y as i32 + 2),
-        text_style,
+        TEXT_STYLE,
         embedded_graphics::text::Baseline::Top,
     )
     .draw(display)
@@ -207,7 +230,6 @@ pub(crate) fn draw_event(
 
 fn draw_days(display: &mut Display420BlackWhite, count: u8) {
     let left_padding: i32 = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
-    let text_style = MonoTextStyle::new(&EVENT_FONT, Color::Black);
     let starting_x = START_POS + left_padding + 5;
     let y = display.bounding_box().size.height - EVENT_FONT.character_size.height;
     let mut x_offset = 0;
@@ -227,7 +249,7 @@ fn draw_days(display: &mut Display420BlackWhite, count: u8) {
         Text::with_baseline(
             day_text,
             pos,
-            text_style,
+            TEXT_STYLE,
             embedded_graphics::text::Baseline::Top,
         )
         .draw(display)
@@ -240,6 +262,8 @@ use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin as EhalInputPin, OutputPin as EhalOutputPin};
 use esp_hal::rtc_cntl::Rtc;
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
+
+use crate::hardware;
 
 pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     display: &mut Display420BlackWhite,
@@ -275,6 +299,7 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         }
     }
     crate::display::add_footer_info(display);
+    crate::display::draw_sync_time(display, &rtc);
     driver.full_update(display).unwrap();
     log::info!("Display updated!");
 

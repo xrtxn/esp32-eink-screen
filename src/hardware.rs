@@ -32,7 +32,7 @@ pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
     }
 }
 
-pub(crate) fn get_time(rtc: esp_hal::rtc_cntl::Rtc<'_>) -> jiff::Zoned {
+pub(crate) fn get_time(rtc: &esp_hal::rtc_cntl::Rtc<'_>) -> jiff::Zoned {
     let now = jiff::Timestamp::from_microsecond(rtc.current_time_us() as i64).unwrap();
     now.to_zoned(TZ)
 }
