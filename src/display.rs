@@ -134,6 +134,10 @@ fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
     (one_minute * end_minute as f32) as u32
 }
 
+pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, rtc: Rtc<'_>) {
+    rtc.current_time_us();
+}
+
 pub(crate) fn draw_event(
     display: &mut Display420BlackWhite,
     start_minute: u16,
@@ -249,11 +253,11 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     DELAY: DelayNs,
 {
     crate::display::draw_time_row_header(display);
-    let tz_offset = time::UtcOffset::from_hms(1, 0, 0).unwrap();
+    let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
     for event in events {
         for eevent in event.events {
-            let start_dt = time::OffsetDateTime::to_offset(eevent.dtstart.unwrap(), tz_offset);
-            let end_dt = time::OffsetDateTime::to_offset(eevent.dtend.unwrap(), tz_offset);
+            let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());
+            let end_dt = eevent.dtend.unwrap().to_zoned(tz.clone());
             let start_minute = crate::date_to_mins(start_dt);
             let end_minute = crate::date_to_mins(end_dt);
             log::info!(

@@ -5,12 +5,13 @@ use esp_hal::{
     gpio::{AnyPin, Input},
     handler, ram,
     rtc_cntl::sleep::{Ext0WakeupSource, TimerWakeupSource, WakeupLevel},
-    system::{SleepSource, wakeup_cause},
+    system::{wakeup_cause, SleepSource},
 };
 
-use crate::{BOOT_TYPES, BootType};
+use crate::{BootType, BOOT_TYPES};
 
 const SLEEP_DURATION: u64 = 300;
+const TZ: jiff::tz::TimeZone = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
 
 pub static BUTTON: Mutex<RefCell<Option<Input<'static>>>> = Mutex::new(RefCell::new(None));
 
@@ -31,6 +32,11 @@ pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
     }
 }
 
+pub(crate) fn get_time(rtc: esp_hal::rtc_cntl::Rtc<'_>) -> jiff::Zoned {
+    let now = jiff::Timestamp::from_microsecond(rtc.current_time_us() as i64).unwrap();
+    now.to_zoned(TZ)
+}
+
 // Sets the boot type based on wakeup cause
 pub(crate) fn apply_wakeup_boot_type() {
     match wakeup_cause() {
@@ -38,7 +44,7 @@ pub(crate) fn apply_wakeup_boot_type() {
         SleepSource::Ext0 => BootType::set(BootType::Config),
         // Timer expired
         SleepSource::Timer => BootType::set(BootType::Display),
-        // For other sources (like Undefined/Software Reset), we keep the current state
+        // For other sources keep the current state
         _ => {}
     }
 }

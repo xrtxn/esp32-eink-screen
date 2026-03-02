@@ -19,11 +19,11 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
-use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use crate::server::{WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU32, AtomicU8};
+use portable_atomic::{AtomicU8, AtomicU32};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -37,7 +37,7 @@ use esp_hal::{
     gpio::{Input, Output},
     spi::master::Spi,
 };
-use time::OffsetDateTime;
+use jiff::Zoned;
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
 use esp_backtrace as _;
@@ -231,7 +231,7 @@ async fn run_display_mode(
         let time = networking::get_time(net_stack).await;
         // set_current_time_us expects microseconds
         rtc.set_current_time_us(
-            (time.unix_timestamp() as u64 * 1_000_000) + (time.microsecond() as u64),
+            (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
         );
     }
 
@@ -275,6 +275,6 @@ fn extract_calendar_data(
         .collect()
 }
 
-fn date_to_mins(dt: OffsetDateTime) -> u16 {
+fn date_to_mins(dt: Zoned) -> u16 {
     dt.hour() as u16 * 60 + dt.minute() as u16
 }

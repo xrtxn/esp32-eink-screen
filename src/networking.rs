@@ -44,26 +44,26 @@ static CAL_STRINGS: StaticCell<
 
 #[derive(Copy, Clone, Default)]
 struct NtpTimestamp {
-    duration: time::Duration,
+    duration: jiff::SignedDuration,
 }
 
 impl sntpc::NtpTimestampGenerator for NtpTimestamp {
     fn init(&mut self) {
         let ticks = embassy_time::Instant::now().as_ticks();
         let micros = ticks * 1_000_000 / embassy_time::TICK_HZ;
-        self.duration = time::Duration::microseconds(micros as i64);
+        self.duration = jiff::SignedDuration::from_micros(micros as i64);
     }
 
     fn timestamp_sec(&self) -> u64 {
-        self.duration.whole_seconds() as u64
+        self.duration.as_secs() as u64
     }
 
     fn timestamp_subsec_micros(&self) -> u32 {
-        self.duration.subsec_microseconds() as u32
+        self.duration.subsec_micros() as u32
     }
 }
 
-pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
+pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
     use embassy_net::udp::UdpSocket;
     use sntpc::{NtpContext, get_time};
 
@@ -92,7 +92,7 @@ pub async fn get_time(stack: Stack<'_>) -> time::UtcDateTime {
     let result = get_time(SocketAddr::V4(SocketAddrV4::new(ip, 123)), &socket, context)
         .await
         .unwrap();
-    let time = time::UtcDateTime::from_unix_timestamp(result.seconds.into()).unwrap();
+    let time = jiff::Timestamp::from_second(result.seconds as i64).unwrap();
     log::info!("Current time: {:?}", time);
     time
 }
@@ -101,7 +101,7 @@ pub async fn network_req(
     stack: Stack<'_>,
     tcp_client: &TcpClient<'_, 1, 4096, 4096>,
     tls_reference: TlsReference<'_>,
-    date: time::Date,
+    date: jiff::civil::Date,
     cal_xml_buf: &mut heapless::String<TOTAL_VCAL_BUFFER>,
     req_buffer: &mut [u8; 8192],
 ) {
@@ -200,8 +200,7 @@ pub(crate) async fn get_events<'a>(
         crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
     );
     let time_from_rtc =
-        time::OffsetDateTime::from_unix_timestamp(rtc.current_time_us() as i64 / 1_000_000)
-            .unwrap();
+        jiff::Timestamp::from_second(rtc.current_time_us() as i64 / 1_000_000).unwrap();
 
     let mut success = false;
     for tries in 1..=3 {
@@ -210,7 +209,7 @@ pub(crate) async fn get_events<'a>(
             stack,
             &tcp_client,
             tls.reference(),
-            time_from_rtc.date(),
+            time_from_rtc.to_zoned(jiff::tz::TimeZone::UTC).date(),
             cal_xml_buf,
             req_buffer,
         );

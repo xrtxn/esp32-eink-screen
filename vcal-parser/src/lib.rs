@@ -7,7 +7,7 @@ extern crate alloc;
 use alloc::string::String;
 #[cfg(not(test))]
 use alloc::vec::Vec;
-use time::OffsetDateTime;
+use jiff::Timestamp;
 
 #[cfg(test)]
 use std::string::String;
@@ -37,8 +37,8 @@ pub struct VEvent<'a> {
     pub summary: Option<&'a str>,
     pub description: Option<&'a str>,
     pub location: Option<&'a str>,
-    pub dtstart: Option<OffsetDateTime>,
-    pub dtend: Option<OffsetDateTime>,
+    pub dtstart: Option<Timestamp>,
+    pub dtend: Option<Timestamp>,
     pub dtstamp: Option<&'a str>,
     pub status: Option<&'a str>,
     pub rrule: Option<&'a str>,
@@ -53,9 +53,18 @@ pub struct VEvent<'a> {
     pub alarms: Vec<VAlarm<'a>>,
 }
 
-fn parse_date(dt: &str) -> time::OffsetDateTime {
-    use time::format_description::well_known::Iso8601;
-    time::OffsetDateTime::parse(dt, &Iso8601::DEFAULT).unwrap()
+fn parse_date(dt: &str) -> Timestamp {
+    use jiff::fmt::strtime;
+    // iCal basic format: "20251222T170000Z" (UTC) or "20251222T170000" (local, treat as UTC)
+    let s = dt.strip_suffix('Z').unwrap_or(dt);
+    let civil_dt = strtime::parse("%Y%m%dT%H%M%S", s)
+        .unwrap()
+        .to_datetime()
+        .unwrap();
+    civil_dt
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap()
+        .timestamp()
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -174,7 +183,7 @@ fn end_component<'a>(input: &'a str, name: &'static str) -> IResult<&'a str, ()>
 }
 
 /// Create a DateTime from a property
-fn make_datetime<'a>(prop: &Property<'a>) -> OffsetDateTime {
+fn make_datetime<'a>(prop: &Property<'a>) -> Timestamp {
     log::trace!("Creating datetime from property: {:?}", prop);
     let mut s: heapless::String<16> = heapless::String::new();
     s.push_str(prop.value)

@@ -88,7 +88,7 @@ reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="main", defau
 mbedtls-rs = { git = "https://github.com/esp-rs/mbedtls-rs.git" }
 roxmltree = { version = "0.21.1", default-features = false }
 vcal-parser = { path = "./vcal-parser" }
-time = { version = "0.3", default-features = false, features = ["parsing", "alloc"] }
+jiff = { version = "0.2.22", default-features = false, features = ["alloc"] }
 
 # NTP
 sntpc = { version = "0.8", default-features = false }
