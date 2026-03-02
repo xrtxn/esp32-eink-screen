@@ -27,7 +27,6 @@ impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        // &'static RefCell<...> is Copy, so the closure is AsyncFn (not just AsyncFnMut)
         let flash = self.flash_storage;
 
         picoserve::Router::new()
@@ -36,17 +35,18 @@ impl AppBuilder for AppProps {
                 picoserve::routing::get(move || config_page_handler(flash)),
             )
             .route(
-                "/api/config",
+                "/api/config/wifi",
                 picoserve::routing::post(
-                    move |picoserve::extract::Json(config): picoserve::extract::Json<
-                        storage::NvsConfig,
+                    move |picoserve::extract::Json(resp_wifi): picoserve::extract::Json<
+                        storage::WifiCreds,
                     >| async move {
-                        log::info!("Received config change request: {:?}", config);
-                        storage::write_config(flash, config).await;
+                        log::info!("Received config change request: {:?}", resp_wifi);
+                        let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+                        nvs.wifi = Some(resp_wifi);
+                        storage::write_config(flash, nvs).await;
                     },
                 ),
             )
-
     }
 }
 

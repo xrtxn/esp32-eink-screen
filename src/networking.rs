@@ -21,7 +21,12 @@ const NEXTCLOUD_CERT: &core::ffi::CStr = {
     }
 };
 const CALENDAR_ID: &str = "szakdoga-teszt";
-const TOTAL_VCAL_BUFFER: usize = crate::MAX_DAILY_EVENTS * crate::MAX_VCALENDAR_BYTES;
+
+// This is one event every half hour
+pub const MAX_DAILY_EVENTS: usize = 4;
+pub const MAX_VCALENDAR_BYTES: usize = 2000;
+
+const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
 
 pub(crate) static CLIENT_STATE: StaticCell<
     embassy_net::tcp::client::TcpClientState<1, 4096, 4096>,
@@ -30,6 +35,12 @@ static RX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
 static RX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 static TX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
 static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
+
+static CAL_XML_BUF: StaticCell<heapless::String<TOTAL_VCAL_BUFFER>> = StaticCell::new();
+static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
+static CAL_STRINGS: StaticCell<
+    heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS>,
+> = StaticCell::new();
 
 #[derive(Copy, Clone, Default)]
 struct NtpTimestamp {
@@ -170,4 +181,66 @@ pub async fn network_req(
     cal_xml_buf
         .push_str(res)
         .expect("Response too large for calendar buffer");
+}
+
+pub(crate) type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
+
+pub(crate) async fn get_events<'a>(
+    trng: &mut esp_hal::rng::Trng,
+    rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
+    stack: embassy_net::Stack<'_>,
+) -> VcalsType<'a> {
+    let tls = mbedtls_rs::Tls::new(trng).unwrap();
+
+    let cal_xml_buf = CAL_XML_BUF.init(heapless::String::new());
+    let req_buffer = REQ_BUFFER.init([0u8; 8192]);
+
+    let tcp_client = TcpClient::new(
+        stack,
+        crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
+    );
+    let time_from_rtc =
+        time::OffsetDateTime::from_unix_timestamp(rtc.current_time_us() as i64 / 1_000_000)
+            .unwrap();
+
+    let mut success = false;
+    for tries in 1..=3 {
+        req_buffer.fill(0);
+        let req = crate::networking::network_req(
+            stack,
+            &tcp_client,
+            tls.reference(),
+            time_from_rtc.date(),
+            cal_xml_buf,
+            req_buffer,
+        );
+        if let Ok(()) = embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
+        {
+            success = true;
+            break;
+        }
+        log::warn!("Failed to get calendar data on attempt {tries}, retrying...");
+    }
+
+    if !success {
+        log::error!("Failed after 3 attempts, entering deep sleep");
+        crate::hardware::go_to_deep_sleep(rtc);
+    }
+
+    log::trace!("Received calendar data len: {}", cal_xml_buf.len());
+    let cal_strings = CAL_STRINGS.init(crate::extract_calendar_data(cal_xml_buf));
+    // todo do unfolding
+    let events: VcalsType<'static> = cal_strings
+        .iter()
+        .map(|s| vcal_parser::parse_vcalendar(s).unwrap().1)
+        .collect();
+
+    log::trace!(
+        "Parsed: {:?}",
+        events
+            .iter()
+            .map(|e| &e.events.first().unwrap().summary)
+            .collect::<heapless::Vec<_, MAX_DAILY_EVENTS>>()
+    );
+    events
 }

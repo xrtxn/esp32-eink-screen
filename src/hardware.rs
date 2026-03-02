@@ -35,9 +35,9 @@ pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
 pub(crate) fn apply_wakeup_boot_type() {
     match wakeup_cause() {
         // GPIO0 button was pressed
-        SleepSource::Ext0 => BootType::set_boot_type(BootType::Config),
+        SleepSource::Ext0 => BootType::set(BootType::Config),
         // Timer expired
-        SleepSource::Timer => BootType::set_boot_type(BootType::Display),
+        SleepSource::Timer => BootType::set(BootType::Display),
         // For other sources (like Undefined/Software Reset), we keep the current state
         _ => {}
     }
@@ -58,7 +58,7 @@ pub fn handler() {
             core::sync::atomic::Ordering::Relaxed,
             core::sync::atomic::Ordering::Relaxed,
             |x| {
-                Some(match BootType::swap_type(x) {
+                Some(match BootType::from_u8(x) {
                     BootType::Display => BootType::Config as u8,
                     BootType::Config => BootType::Display as u8,
                 })

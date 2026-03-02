@@ -21,20 +21,18 @@ fn build_index_html() {
     println!("cargo:rerun-if-changed=web/index.html");
     println!("cargo:rerun-if-changed=web/static/pico.min.css");
 
-    let html = std::fs::read_to_string("web/index.html")
-        .expect("Failed to read web/index.html");
+    let html = std::fs::read_to_string("web/index.html").expect("Failed to read web/index.html");
     let css = std::fs::read_to_string("web/static/pico.min.css")
         .expect("Failed to read web/static/pico.min.css");
 
     // Replace the placeholder that was used by the Askama template
-    let final_html = html.replace("            /* CSS_PLACEHOLDER */", &css);
+    let final_html = html.replace("/* CSS_PLACEHOLDER */", &css);
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_html = format!("{out_dir}/index.html");
     let out_gz = format!("{out_dir}/index.html.gz");
 
-    std::fs::write(&out_html, final_html.as_bytes())
-        .expect("Failed to write built index.html");
+    std::fs::write(&out_html, final_html.as_bytes()).expect("Failed to write built index.html");
 
     // Remove any previous .gz so gzip -k doesn't refuse to overwrite
     let _ = std::fs::remove_file(&out_gz);

@@ -15,56 +15,41 @@ mod server;
 mod storage;
 mod wifi;
 
-use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use core::cell::RefCell;
+
+use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
+use crate::server::{WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
-use esp_radio::wifi::PowerSaveMode;
+use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU32, AtomicU8};
+use portable_atomic::{AtomicU8, AtomicU32};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
-use embassy_net::tcp::client::TcpClient;
-use embassy_net::StackResources;
+
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
+use esp_hal::gpio::{InputPin, OutputPin};
+use esp_hal::peripherals::SPI2;
 use esp_hal::{
     delay::Delay,
     gpio::{Input, Output},
     spi::master::Spi,
 };
-use static_cell::StaticCell;
 use time::OffsetDateTime;
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
 use esp_backtrace as _;
 
-use crate::hardware::{apply_wakeup_boot_type, go_to_deep_sleep};
+use crate::hardware::go_to_deep_sleep;
 
 extern crate alloc;
-
-// This is one event every half our
-pub const MAX_DAILY_EVENTS: usize = 4;
-pub const MAX_VCALENDAR_BYTES: usize = 2000;
-
-const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
-
-static NETWORK_STACK: StaticCell<StackResources<4>> = StaticCell::new();
-static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
-static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
-
-static CAL_XML_BUF: StaticCell<heapless::String<TOTAL_VCAL_BUFFER>> = StaticCell::new();
-static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
-static CAL_STRINGS: StaticCell<
-    heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS>,
-> = StaticCell::new();
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
-
-type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
@@ -76,29 +61,29 @@ type EpdDriver = WeActStudio420BlackWhiteDriver<
     Delay,
 >;
 
+#[derive(PartialEq, Clone, Copy)]
 pub(crate) enum BootType {
     Display = 0,
     Config = 1,
 }
 
 impl BootType {
-    pub(crate) fn set_boot_type(val: BootType) {
+    /// Store the boot type into RTC-persistent memory.
+    pub(crate) fn set(val: BootType) {
         BOOT_TYPES.store(val as u8, core::sync::atomic::Ordering::Relaxed);
     }
 
-    pub(crate) fn get_boot_type() -> BootType {
-        match BOOT_TYPES.load(core::sync::atomic::Ordering::Relaxed) {
-            0 => BootType::Display,
-            1 => BootType::Config,
-            _ => panic!(),
-        }
+    /// Read the boot type from RTC-persistent memory.
+    pub(crate) fn get() -> BootType {
+        Self::from_u8(BOOT_TYPES.load(core::sync::atomic::Ordering::Relaxed))
     }
 
-    pub(crate) fn swap_type(val: u8) -> BootType {
+    /// Convert a raw `u8` (as stored in the atomic) to a `BootType`.
+    pub(crate) fn from_u8(val: u8) -> BootType {
         match val {
             0 => BootType::Display,
             1 => BootType::Config,
-            _ => panic!(),
+            _ => panic!("Unknown boot type value: {}", val),
         }
     }
 }
@@ -112,26 +97,18 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    //apply_wakeup_boot_type();
+    let w = peripherals.WIFI;
+
+    #[cfg(not(debug_assertions))]
+    hardware::apply_wakeup_boot_type();
+
+    let boot_type = BootType::get();
 
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
-    let creds = storage::read_config(flash).await;
+    let stored_config = storage::read_config(flash).await;
 
-    let creds = match creds {
-        Some(ok) => ok,
-        #[cfg(debug_assertions)]
-        None => {
-            let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
-            NvsConfig::new(Some(wifi_creds))
-        }
-        #[cfg(not(debug_assertions))]
-        None => {
-            // no credentials set, boot to config mode
-            BootType::set_boot_type(BootType::Config);
-            esp_hal::system::software_reset();
-        }
-    };
+    let creds = get_credentials(stored_config);
 
     let prev_boot_count = BOOT_COUNT.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
     log::info!("Boot count: {}", prev_boot_count + 1);
@@ -151,56 +128,24 @@ async fn main(spawner: Spawner) {
 
     let button = peripherals.GPIO0;
 
-    let config = esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up);
-    let mut button = Input::new(button, config);
+    let btn_config = esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up);
+    let mut button = Input::new(button, btn_config);
 
     critical_section::with(|cs| {
         button.listen(esp_hal::gpio::Event::FallingEdge);
         hardware::BUTTON.borrow_ref_mut(cs).replace(button)
     });
 
-    let wifi_config =
-        esp_radio::wifi::Config::default().with_power_save_mode(PowerSaveMode::Minimum);
-
-    let (wifi_controller, interfaces) = esp_radio::wifi::new(
-        RADIO_CONTROLLER.init(esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
-        peripherals.WIFI,
-        wifi_config,
-    )
-    .expect("Failed to initialize Wi-Fi controller");
-
-    let wifi_interface = interfaces.sta;
-
-    let config = embassy_net::Config::dhcpv4(Default::default());
-
-    let _trng_source = esp_hal::rng::TrngSource::new(peripherals.RNG, peripherals.ADC1);
-
-    let trng = TRNG.init(esp_hal::rng::Trng::try_new().unwrap());
-    let seed = (trng.random() as u64) << 32 | trng.random() as u64;
-
-    // Init network stack
-    let (stack, runner) = embassy_net::new(
-        wifi_interface,
-        config,
-        NETWORK_STACK.init(StackResources::<4>::new()),
-        seed,
-    );
-
-    let wifi_creds = creds.wifi.unwrap();
-
-    spawner
-        .spawn(wifi::connection(
-            wifi_controller,
-            wifi_creds.ssid,
-            wifi_creds.password,
-        ))
-        .ok();
-    spawner.spawn(wifi::net_task(runner)).ok();
+    let (net_stack, trng) = if boot_type == BootType::Display {
+        wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1)
+    } else {
+        wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1)
+    };
 
     {
         let to = embassy_time::with_timeout(
             embassy_time::Duration::from_secs(30),
-            stack.wait_config_up(),
+            net_stack.wait_config_up(),
         )
         .await;
         if to.is_err() {
@@ -208,50 +153,109 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    let config = stack.config_v4().unwrap();
-    log::info!("Network connected with IP address: {}", config.address);
+    let ip_config = net_stack.config_v4().unwrap();
+    log::info!("Network connected with IP address: {}", ip_config.address);
 
-    // The RTC clock drifts, so every 5th boot we should resync it with the NTP time.
+    log::info!("Microcontroller initialized");
+
+    match boot_type {
+        BootType::Display => {
+            log::info!("Boot type is display");
+            run_display_mode(
+                prev_boot_count,
+                &mut rtc,
+                net_stack,
+                trng,
+                peripherals.GPIO12,
+                peripherals.GPIO11,
+                peripherals.SPI2,
+                peripherals.GPIO18,
+                peripherals.GPIO4,
+                peripherals.GPIO15,
+                peripherals.GPIO10,
+            )
+            .await;
+        }
+        BootType::Config => {
+            log::info!("Boot type is config");
+            run_config_mode(spawner, net_stack, flash).await;
+        }
+    }
+}
+
+/// - If credentials exist and wifi is set, returns them.
+/// - If wifi is not set reboot to config mode
+fn get_credentials(stored_config: Option<NvsConfig>) -> NvsConfig {
+    match stored_config {
+        Some(ok) => match ok.wifi {
+            None => {
+                // WiFi credentials are missing; switch to config mode so the user can set them.
+                log::warn!("No WiFi credentials stored, rebooting into config mode");
+                BootType::set(BootType::Config);
+                esp_hal::system::software_reset();
+            }
+            _ => ok,
+        },
+        #[cfg(debug_assertions)]
+        None => {
+            log::warn!("No config found; using compile-time credentials (debug build)");
+            let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
+            NvsConfig::new(Some(wifi_creds))
+        }
+        #[cfg(not(debug_assertions))]
+        None => {
+            log::warn!("No config found, rebooting into config mode");
+            BootType::set(BootType::Config);
+            esp_hal::system::software_reset();
+        }
+    }
+}
+
+async fn run_display_mode(
+    prev_boot_count: u32,
+    rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
+    net_stack: embassy_net::Stack<'_>,
+    trng: &mut esp_hal::rng::Trng,
+    sclk: impl OutputPin + 'static,
+    mosi: impl OutputPin + 'static,
+    spi: SPI2<'static>,
+    dc: impl OutputPin + 'static,
+    rst: impl OutputPin + 'static,
+    busy: impl InputPin + 'static,
+    cs: impl OutputPin + 'static,
+) {
+    // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
     if prev_boot_count.is_multiple_of(5) {
-        let time = networking::get_time(stack).await;
-
-        // it uses microseconds, so we should convert it before setting
+        log::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
+        let time = networking::get_time(net_stack).await;
+        // set_current_time_us expects microseconds
         rtc.set_current_time_us(
             (time.unix_timestamp() as u64 * 1_000_000) + (time.microsecond() as u64),
         );
     }
 
-    log::info!("Microcontroller initilized");
+    let events = networking::get_events(trng, rtc, net_stack).await;
 
-    match BootType::get_boot_type() {
-        BootType::Display => {
-            let events = get_events(trng, &mut rtc, stack).await;
+    let (mut display, mut driver) = init::init_display(sclk, mosi, spi, dc, rst, busy, cs).await;
+    display::write_to_screen(&mut display, &mut driver, events, rtc).await;
+}
 
-            let sclk = peripherals.GPIO12;
-            let mosi = peripherals.GPIO11; // SDA -> MOSI
-            let spi = peripherals.SPI2;
-            let dc = peripherals.GPIO18;
-            let rst = peripherals.GPIO4;
-            let busy = peripherals.GPIO15;
-            let cs = peripherals.GPIO10;
-            let (mut display, mut driver) =
-                init::init_display(sclk, mosi, spi, dc, rst, busy, cs).await;
-            display::write_to_screen(&mut display, &mut driver, events, &mut rtc).await;
+async fn run_config_mode(
+    spawner: Spawner,
+    net_stack: embassy_net::Stack<'static>,
+    flash: &'static RefCell<FlashStorage<'static>>,
+) {
+    let app = picoserve::make_static!(
+        picoserve::AppRouter<server::AppProps>,
+        server::AppProps {
+            flash_storage: flash
         }
-        BootType::Config => {
-            let app = picoserve::make_static!(
-                picoserve::AppRouter<server::AppProps>,
-                server::AppProps {
-                    flash_storage: flash
-                }
-                .build_app()
-            );
+        .build_app()
+    );
 
-            for task_id in 0..WEB_TASK_POOL_SIZE {
-                spawner.must_spawn(web_task(task_id, stack, app));
-            }
-        }
-    };
+    for task_id in 0..WEB_TASK_POOL_SIZE {
+        spawner.must_spawn(web_task(task_id, net_stack, app));
+    }
 }
 
 fn extract_calendar_data(
@@ -272,64 +276,4 @@ fn extract_calendar_data(
 
 fn date_to_mins(dt: OffsetDateTime) -> u16 {
     dt.hour() as u16 * 60 + dt.minute() as u16
-}
-
-async fn get_events<'a>(
-    trng: &mut esp_hal::rng::Trng,
-    rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
-    stack: embassy_net::Stack<'_>,
-) -> VcalsType<'a> {
-    let tls = mbedtls_rs::Tls::new(trng).unwrap();
-
-    let cal_xml_buf = CAL_XML_BUF.init(heapless::String::new());
-    let req_buffer = REQ_BUFFER.init([0u8; 8192]);
-
-    let tcp_client = TcpClient::new(
-        stack,
-        networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
-    );
-    let time_from_rtc =
-        time::OffsetDateTime::from_unix_timestamp(rtc.current_time_us() as i64 / 1_000_000)
-            .unwrap();
-
-    let mut success = false;
-    for tries in 1..=3 {
-        req_buffer.fill(0);
-        let req = networking::network_req(
-            stack,
-            &tcp_client,
-            tls.reference(),
-            time_from_rtc.date(),
-            cal_xml_buf,
-            req_buffer,
-        );
-        if let Ok(()) = embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
-        {
-            success = true;
-            break;
-        }
-        log::warn!("Failed to get calendar data on attempt {tries}, retrying...");
-    }
-
-    if !success {
-        log::error!("Failed after 3 attempts, entering deep sleep");
-        go_to_deep_sleep(rtc);
-    }
-
-    log::trace!("Received calendar data len: {}", cal_xml_buf.len());
-    let cal_strings = CAL_STRINGS.init(extract_calendar_data(cal_xml_buf));
-    // todo do unfolding
-    let events: VcalsType<'static> = cal_strings
-        .iter()
-        .map(|s| vcal_parser::parse_vcalendar(s).unwrap().1)
-        .collect();
-
-    log::trace!(
-        "Parsed: {:?}",
-        events
-            .iter()
-            .map(|e| &e.events.first().unwrap().summary)
-            .collect::<heapless::Vec<_, MAX_DAILY_EVENTS>>()
-    );
-    events
 }
