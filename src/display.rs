@@ -20,7 +20,7 @@ const MINI_TEXT_STYLE: MonoTextStyle<'static, Color> =
     MonoTextStyle::new(&EVENT_FONT, Color::Black);
 
 pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
-    use embedded_graphics::text::{Baseline, Text};
+    use embedded_graphics::text::Text;
 
     let git_commit = env!("GIT_SHORT");
     let git_dirty: bool = env!("GIT_DIRTY").parse().unwrap_or(false);
@@ -141,8 +141,7 @@ fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
     (one_minute * end_minute as f32) as u32
 }
 
-pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, rtc: &Rtc<'_>) {
-    let time = hardware::get_time(rtc);
+pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, time: &jiff::Zoned) {
     log::info!("Calendar sync time: {}", time);
     let fmt_time: heapless::String<11> =
         format!("Sync: {:02}:{:02}", time.hour(), time.minute()).unwrap();
@@ -158,6 +157,20 @@ pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, rtc: &Rtc<'_>) 
     );
 
     Text::with_text_style(&fmt_time, pos, MINI_TEXT_STYLE, text_style)
+        .draw(display)
+        .unwrap();
+}
+
+pub(crate) fn draw_time_ticker(display: &mut Display420BlackWhite, time: &jiff::Zoned) {
+    let x = START_POS;
+    let end_x = START_POS + 40;
+
+    let y = calculate_start_height(display.size().height, crate::date_to_mins(time));
+
+    let end_y = y;
+
+    Line::new(Point::new(x, y as i32), Point::new(end_x, end_y as i32))
+        .into_styled(PrimitiveStyle::with_stroke(Color::Black, 1))
         .draw(display)
         .unwrap();
 }
@@ -282,8 +295,8 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         for eevent in event.events {
             let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());
             let end_dt = eevent.dtend.unwrap().to_zoned(tz.clone());
-            let start_minute = crate::date_to_mins(start_dt);
-            let end_minute = crate::date_to_mins(end_dt);
+            let start_minute = crate::date_to_mins(&start_dt);
+            let end_minute = crate::date_to_mins(&end_dt);
             log::info!(
                 "Event: {}, start_minute: {}, end_minute: {}",
                 eevent.summary.unwrap_or("No summary"),
@@ -298,10 +311,13 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
             );
         }
     }
+    #[cfg(debug_assertions)]
     crate::display::add_footer_info(display);
-    crate::display::draw_sync_time(display, &rtc);
+
+    let time = hardware::get_time(rtc);
+    crate::display::draw_sync_time(display, &time);
+    crate::display::draw_time_ticker(display, &time);
     driver.full_update(display).unwrap();
-    log::info!("Display updated!");
 
     crate::hardware::go_to_deep_sleep(rtc);
 }
