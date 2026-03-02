@@ -1,4 +1,5 @@
-use core::cell::RefCell;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
 
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
@@ -20,7 +21,7 @@ static HTTP_BUFFERS: [StaticCell<[u8; 2048]>; WEB_TASK_POOL_SIZE] =
     [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
 
 pub(crate) struct AppProps {
-    pub flash_storage: &'static RefCell<FlashStorage<'static>>,
+    pub flash_storage: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
 }
 
 impl AppBuilder for AppProps {
@@ -68,7 +69,7 @@ pub async fn web_task(
 }
 
 async fn config_page_handler(
-    _flash: &'static RefCell<FlashStorage<'static>>,
+    _flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
 ) -> impl picoserve::response::IntoResponse {
     (
         [

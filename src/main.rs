@@ -15,14 +15,15 @@ mod server;
 mod storage;
 mod wifi;
 
-use core::cell::RefCell;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
-use crate::server::{WEB_TASK_POOL_SIZE, web_task};
+use crate::server::{web_task, WEB_TASK_POOL_SIZE};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU8, AtomicU32};
+use portable_atomic::{AtomicU32, AtomicU8};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -49,7 +50,7 @@ extern crate alloc;
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
-pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
+pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
@@ -243,7 +244,7 @@ async fn run_display_mode(
 async fn run_config_mode(
     spawner: Spawner,
     net_stack: embassy_net::Stack<'static>,
-    flash: &'static RefCell<FlashStorage<'static>>,
+    flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
 ) {
     let app = picoserve::make_static!(
         picoserve::AppRouter<server::AppProps>,

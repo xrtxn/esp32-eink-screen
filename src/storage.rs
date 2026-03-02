@@ -1,4 +1,5 @@
-use core::cell::RefCell;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
 
 use embassy_embedded_hal::adapter::BlockingAsync;
 use esp_storage::FlashStorage;
@@ -10,13 +11,15 @@ const NVS_RANGE: core::ops::Range<u32> = NVS_STORAGE_START..NVS_STORAGE_START + 
 
 const CONFIG_KEY: u8 = 1;
 
-static FLASH: StaticCell<RefCell<FlashStorage<'static>>> = StaticCell::new();
+static FLASH: StaticCell<Mutex<NoopRawMutex, FlashStorage<'static>>> = StaticCell::new();
 
-pub(crate) fn init_flash(flash: FlashStorage<'static>) -> &'static RefCell<FlashStorage<'static>> {
-    FLASH.init(RefCell::new(flash))
+pub(crate) fn init_flash(
+    flash: FlashStorage<'static>,
+) -> &'static Mutex<NoopRawMutex, FlashStorage<'static>> {
+    FLASH.init(Mutex::new(flash))
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug)]
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
     // pub caldav: Caldav,
@@ -26,15 +29,6 @@ impl NvsConfig {
     pub fn new(wifi: Option<WifiCreds>) -> Self {
         Self {
             wifi,
-            // caldav: Default::default(),
-        }
-    }
-}
-
-impl Default for NvsConfig {
-    fn default() -> Self {
-        Self {
-            wifi: None,
             // caldav: Default::default(),
         }
     }
@@ -57,25 +51,17 @@ impl WifiCreds {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug)]
 pub struct Caldav {
     pub url: heapless::String<128>,
     pub username: heapless::String<32>,
     pub password: heapless::String<32>,
 }
 
-impl Default for Caldav {
-    fn default() -> Self {
-        Self {
-            url: Default::default(),
-            username: Default::default(),
-            password: Default::default(),
-        }
-    }
-}
-
-pub(crate) async fn read_config(flash_cell: &RefCell<FlashStorage<'static>>) -> Option<NvsConfig> {
-    let mut borrow = flash_cell.borrow_mut();
+pub(crate) async fn read_config(
+    flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
+) -> Option<NvsConfig> {
+    let mut borrow = flash_cell.lock().await;
     let mut data_buffer = [0u8; 256];
 
     let async_flash = BlockingAsync::new(&mut *borrow);
@@ -96,8 +82,11 @@ pub(crate) async fn read_config(flash_cell: &RefCell<FlashStorage<'static>>) -> 
     nvs_config
 }
 
-pub(crate) async fn write_config(flash_cell: &RefCell<FlashStorage<'static>>, config: NvsConfig) {
-    let mut borrow = flash_cell.borrow_mut();
+pub(crate) async fn write_config(
+    flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
+    config: NvsConfig,
+) {
+    let mut borrow = flash_cell.lock().await;
 
     let async_flash = BlockingAsync::new(&mut *borrow);
 
