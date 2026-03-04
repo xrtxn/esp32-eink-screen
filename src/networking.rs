@@ -20,7 +20,7 @@ const NEXTCLOUD_CERT: &core::ffi::CStr = {
         Err(_) => panic!("cert contains interior null bytes or is missing terminator"),
     }
 };
-const CALENDAR_ID: &str = "szakdoga-teszt";
+const CALENDAR_ID: &str = "e4a2c806-b52b-43a3-828b-d97ec82f698b";
 
 // This is one event every half hour
 pub const MAX_DAILY_EVENTS: usize = 4;

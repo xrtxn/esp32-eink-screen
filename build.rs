@@ -168,4 +168,10 @@ fn load_env() {
     if let Ok(val) = env::var("CALDAV_PASS") {
         println!("cargo:rustc-env=CALDAV_PASS={}", val);
     }
+    if let Ok(val) = env::var("AP_SSID") {
+        println!("cargo:rustc-env=AP_SSID={}", val);
+    }
+    if let Ok(val) = env::var("AP_PASS") {
+        println!("cargo:rustc-env=AP_PASS={}", val);
+    }
 }

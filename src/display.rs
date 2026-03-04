@@ -17,7 +17,7 @@ const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = 40;
 const TEXT_STYLE: MonoTextStyle<'static, Color> = MonoTextStyle::new(&EVENT_FONT, Color::Black);
 const MINI_TEXT_STYLE: MonoTextStyle<'static, Color> =
-    MonoTextStyle::new(&EVENT_FONT, Color::Black);
+    MonoTextStyle::new(&MINI_FONT, Color::Black);
 
 pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
     use embedded_graphics::text::Text;
@@ -103,9 +103,8 @@ fn draw_base_calendar(display: &mut Display420BlackWhite) {
 fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
     log::trace!("display_height: {}", display_height);
     let text_height = EVENT_FONT.character_size.height as i32;
-    let extra_bottom_space = EVENT_FONT.character_size.height;
     let padding = calculate_padding(
-        display_height - extra_bottom_space,
+        display_height,
         text_height,
         HOURS_TO_DISPLAY as i32,
     );
@@ -114,7 +113,7 @@ fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
     let one_minute = one_hour_height as f32 / 60.0;
 
     log::trace!("one_minute: {}", one_minute);
-    (one_minute * start_minute as f32) as u32
+    (one_minute * start_minute as f32) as u32 + (text_height / 2) as u32
 }
 
 fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
@@ -130,15 +129,14 @@ fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
 fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
     log::trace!("display_height: {}", display_height);
     let text_height = EVENT_FONT.character_size.height as i32;
-    let extra_bottom_space = EVENT_FONT.character_size.height;
     let padding = calculate_padding(
-        display_height - extra_bottom_space,
+        display_height,
         text_height,
         HOURS_TO_DISPLAY as i32,
     );
     let one_hour_height = text_height + padding;
     let one_minute = one_hour_height as f32 / 60.0;
-    (one_minute * end_minute as f32) as u32
+    (one_minute * end_minute as f32) as u32 + (text_height / 2) as u32
 }
 
 pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, time: &jiff::Zoned) {

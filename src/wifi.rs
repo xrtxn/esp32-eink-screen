@@ -66,8 +66,9 @@ pub async fn ap_task(mut controller: WifiController<'static>) {
             let ap_config = ModeConfig::AccessPoint(
                 AccessPointConfig::default()
                     .with_max_connections(1)
-                    .with_auth_method(esp_radio::wifi::AuthMethod::None)
-                    .with_ssid(alloc::string::String::from("Thesis")),
+                    .with_auth_method(esp_radio::wifi::AuthMethod::Wpa3Personal)
+                    .with_ssid(alloc::string::String::from(env!("AP_SSID")))
+                    .with_password(alloc::string::String::from(env!("AP_PASS"))),
             );
             controller.set_config(&ap_config).unwrap();
             log::info!("Starting AP");
