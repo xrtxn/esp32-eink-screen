@@ -44,6 +44,7 @@
               pkgs.systemdMinimal
 
               pkgs.cargo-bloat
+              pkgs.SDL2
             ];
 
             shellHook = ''

@@ -1,10 +1,13 @@
+#[cfg(target_arch = "xtensa")]
+use alloc::string::String;
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
-use embedded_graphics::prelude::{Dimensions, OriginDimensions, Point, Size};
+use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
 use heapless::format;
 use log::info;
+#[cfg(target_arch = "xtensa")]
 use weact_studio_epd::graphics::Display420BlackWhite;
 use weact_studio_epd::Color;
 
@@ -16,10 +19,13 @@ const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = 40;
 const TEXT_STYLE: MonoTextStyle<'static, Color> = MonoTextStyle::new(&EVENT_FONT, Color::Black);
-const MINI_TEXT_STYLE: MonoTextStyle<'static, Color> =
-    MonoTextStyle::new(&MINI_FONT, Color::Black);
+const MINI_TEXT_STYLE: MonoTextStyle<'static, Color> = MonoTextStyle::new(&MINI_FONT, Color::Black);
 
-pub(crate) fn add_footer_info(display: &mut Display420BlackWhite) {
+pub(crate) fn add_footer_info<D>(display: &mut D)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     use embedded_graphics::text::Text;
 
     let git_commit = env!("GIT_SHORT");
@@ -61,7 +67,11 @@ fn calculate_left_side_width(font_size: u32, char_count: i32) -> i32 {
     font_size as i32 * char_count
 }
 
-pub(crate) fn draw_time_row_header(display: &mut Display420BlackWhite) {
+pub(crate) fn draw_time_row_header<D>(display: &mut D)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     let text_height = EVENT_FONT.character_size.height as i32;
     let mut exceeded_height: i32 = 0;
 
@@ -85,7 +95,11 @@ pub(crate) fn draw_time_row_header(display: &mut Display420BlackWhite) {
     // height is at max
 }
 
-fn draw_base_calendar(display: &mut Display420BlackWhite) {
+fn draw_base_calendar<D>(display: &mut D)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     let event_width = display.size().width / (DAYS_TO_DISPLAY + 1) as u32;
     let start_x = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
     let start_y = EVENT_FONT.character_size.height / 2;
@@ -103,11 +117,7 @@ fn draw_base_calendar(display: &mut Display420BlackWhite) {
 fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
     log::trace!("display_height: {}", display_height);
     let text_height = EVENT_FONT.character_size.height as i32;
-    let padding = calculate_padding(
-        display_height,
-        text_height,
-        HOURS_TO_DISPLAY as i32,
-    );
+    let padding = calculate_padding(display_height, text_height, HOURS_TO_DISPLAY as i32);
 
     let one_hour_height = text_height + padding;
     let one_minute = one_hour_height as f32 / 60.0;
@@ -129,17 +139,17 @@ fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
 fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
     log::trace!("display_height: {}", display_height);
     let text_height = EVENT_FONT.character_size.height as i32;
-    let padding = calculate_padding(
-        display_height,
-        text_height,
-        HOURS_TO_DISPLAY as i32,
-    );
+    let padding = calculate_padding(display_height, text_height, HOURS_TO_DISPLAY as i32);
     let one_hour_height = text_height + padding;
     let one_minute = one_hour_height as f32 / 60.0;
     (one_minute * end_minute as f32) as u32 + (text_height / 2) as u32
 }
 
-pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, time: &jiff::Zoned) {
+pub(crate) fn draw_sync_time<D>(display: &mut D, time: &jiff::Zoned)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     log::info!("Calendar sync time: {}", time);
     let fmt_time: heapless::String<11> =
         format!("Sync: {:02}:{:02}", time.hour(), time.minute()).unwrap();
@@ -159,11 +169,15 @@ pub(crate) fn draw_sync_time(display: &mut Display420BlackWhite, time: &jiff::Zo
         .unwrap();
 }
 
-pub(crate) fn draw_time_ticker(display: &mut Display420BlackWhite, time: &jiff::Zoned) {
+pub(crate) fn draw_time_ticker<D>(display: &mut D, time: &jiff::Zoned)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     let x = START_POS;
     let end_x = START_POS + 40;
 
-    let y = calculate_start_height(display.size().height, crate::date_to_mins(time));
+    let y = calculate_start_height(display.size().height, date_to_mins(time));
 
     let end_y = y;
 
@@ -173,12 +187,11 @@ pub(crate) fn draw_time_ticker(display: &mut Display420BlackWhite, time: &jiff::
         .unwrap();
 }
 
-pub(crate) fn draw_event(
-    display: &mut Display420BlackWhite,
-    start_minute: u16,
-    end_minute: u16,
-    text: &str,
-) {
+pub(crate) fn draw_event<D>(display: &mut D, start_minute: u16, end_minute: u16, text: &str)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     let x = START_POS;
     let end_x = calculate_text_width(text.chars().count() as u16, EVENT_FONT);
 
@@ -206,7 +219,7 @@ pub(crate) fn draw_event(
     info!("max_chars_per_line: {}", max_chars_per_line);
 
     //todo use heapless
-    let mut wrapped_text = alloc::string::String::new();
+    let mut wrapped_text = String::new();
     let mut current_line_len = 0;
 
     for word in text.split_whitespace() {
@@ -239,7 +252,11 @@ pub(crate) fn draw_event(
     .unwrap();
 }
 
-fn draw_days(display: &mut Display420BlackWhite, count: u8) {
+fn draw_days<D>(display: &mut D, count: u8)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
     let left_padding: i32 = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
     let starting_x = START_POS + left_padding + 5;
     let y = display.bounding_box().size.height - EVENT_FONT.character_size.height;
@@ -268,14 +285,21 @@ fn draw_days(display: &mut Display420BlackWhite, count: u8) {
     }
 }
 
+#[cfg(target_arch = "xtensa")]
 use display_interface::WriteOnlyDataCommand;
+#[cfg(target_arch = "xtensa")]
 use embedded_hal::delay::DelayNs;
+#[cfg(target_arch = "xtensa")]
 use embedded_hal::digital::{InputPin as EhalInputPin, OutputPin as EhalOutputPin};
+#[cfg(target_arch = "xtensa")]
 use esp_hal::rtc_cntl::Rtc;
+#[cfg(target_arch = "xtensa")]
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
+#[cfg(target_arch = "xtensa")]
 use crate::hardware;
 
+#[cfg(target_arch = "xtensa")]
 pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     display: &mut Display420BlackWhite,
     driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
@@ -293,15 +317,15 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         for eevent in event.events {
             let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());
             let end_dt = eevent.dtend.unwrap().to_zoned(tz.clone());
-            let start_minute = crate::date_to_mins(&start_dt);
-            let end_minute = crate::date_to_mins(&end_dt);
+            let start_minute = date_to_mins(&start_dt);
+            let end_minute = date_to_mins(&end_dt);
             log::info!(
                 "Event: {}, start_minute: {}, end_minute: {}",
                 eevent.summary.unwrap_or("No summary"),
                 start_minute,
                 end_minute
             );
-            crate::display::draw_event(
+            draw_event(
                 display,
                 start_minute,
                 end_minute,
@@ -318,4 +342,8 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     driver.full_update(display).unwrap();
 
     crate::hardware::go_to_deep_sleep(rtc);
+}
+
+pub fn date_to_mins(dt: &jiff::Zoned) -> u16 {
+    dt.hour() as u16 * 60 + dt.minute() as u16
 }

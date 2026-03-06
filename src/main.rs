@@ -274,7 +274,3 @@ fn extract_calendar_data(
         })
         .collect()
 }
-
-fn date_to_mins(dt: &Zoned) -> u16 {
-    dt.hour() as u16 * 60 + dt.minute() as u16
-}
