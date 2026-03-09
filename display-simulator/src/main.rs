@@ -36,19 +36,34 @@ fn main() {
 
     display::draw_time_row_header(&mut display);
 
-    let events: &[(u16, u16, &str)] = &[sample_event(
-        &"2026-07-11T08:10:00".parse().unwrap(),
-        &"2026-07-11T08:20:00".parse().unwrap(),
-        "Breakfast",
-    )];
+    let events: &[(u16, u16, &str)] = &[
+        sample_event(
+            &"2026-07-11T00:00:00".parse().unwrap(),
+            &"2026-07-11T01:30:00".parse().unwrap(),
+            "Morning",
+        ),
+        sample_event(
+            &"2026-07-11T08:10:00".parse().unwrap(),
+            &"2026-07-11T08:20:00".parse().unwrap(),
+            "Breakfast",
+        ),
+        sample_event(
+            &"2026-07-11T23:00:00".parse().unwrap(),
+            &"2026-07-11T23:59:00".parse().unwrap(),
+            "Midnight",
+        ),
+    ];
+
+    let now = jiff::Zoned::now();
+    display::draw_time_ticker(&mut display, &now);
+    display::draw_base_calendar(&mut display);
+    display::draw_sync_time(&mut display, &now);
+    display::draw_days(&mut display, &now.weekday(), 3);
 
     for &(start, end, title) in events {
         display::draw_event(&mut display, start, end, title);
     }
 
-    let now = jiff::Zoned::now();
-    display::draw_sync_time(&mut display, &now);
-    display::draw_time_ticker(&mut display, &now);
     display::add_footer_info(&mut display);
 
     let output_settings = embedded_graphics_simulator::OutputSettingsBuilder::new()

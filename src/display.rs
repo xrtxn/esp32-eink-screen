@@ -1,9 +1,11 @@
+use core::u32;
+
 #[cfg(target_arch = "xtensa")]
 use alloc::string::String;
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point, Size};
 use embedded_graphics::prelude::{Drawable, Primitive};
-use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
+use embedded_graphics::primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
 use embedded_graphics::text::Text;
 use heapless::format;
 use log::info;
@@ -14,12 +16,30 @@ use weact_studio_epd::Color;
 const DAYS_TO_DISPLAY: u8 = 3;
 const START_DISPLAY_HOUR: u8 = 0;
 const HOURS_TO_DISPLAY: u8 = 24;
+const DISPLAY_HEIGHT: u32 = 400;
+/// Padding between hour rows.
+/// (DISPLAY_HEIGHT - text_height * HOURS_TO_DISPLAY) / (HOURS_TO_DISPLAY + 1)
+const ROW_PADDING: i32 = {
+    let text_height = EVENT_FONT.character_size.height as i32;
+    let item_count = HOURS_TO_DISPLAY as i32;
+    let total_text_size = text_height * item_count;
+    let remaining_space = DISPLAY_HEIGHT as i32 - total_text_size;
+    remaining_space / (item_count + 1)
+};
 const MINUTES_IN_A_DAY: u16 = 1440;
 const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
-const START_POS: i32 = 40;
+const START_POS: i32 = calculate_text_width(5, EVENT_FONT) as i32;
 const TEXT_STYLE: MonoTextStyle<'static, Color> = MonoTextStyle::new(&EVENT_FONT, Color::Black);
 const MINI_TEXT_STYLE: MonoTextStyle<'static, Color> = MonoTextStyle::new(&MINI_FONT, Color::Black);
+
+const OVERWRITE_STYLE: PrimitiveStyle<Color> = PrimitiveStyleBuilder::new()
+    .fill_color(Color::White)
+    .stroke_color(Color::Black)
+    .stroke_width(1)
+    .build();
+
+const BORDERLESS_OVERWRITE_STYLE: PrimitiveStyle<Color> = PrimitiveStyle::with_fill(Color::White);
 
 pub(crate) fn add_footer_info<D>(display: &mut D)
 where
@@ -41,30 +61,24 @@ where
         .baseline(embedded_graphics::text::Baseline::Bottom)
         .build();
 
-    Text::with_text_style(
+    let etext = Text::with_text_style(
         &build_info,
         display.bounding_box().bottom_right().unwrap(),
         MINI_TEXT_STYLE,
         text_style,
-    )
-    .draw(display)
-    .unwrap();
-}
+    );
 
-fn calculate_padding(full_size: u32, text_size: i32, item_count: i32) -> i32 {
-    if item_count <= 0 {
-        return 0;
-    }
+    let mut text_bb = etext.bounding_box();
+    text_bb.size.width += 2;
+    text_bb.size.height += 1;
+    text_bb.top_left.x -= 1;
 
-    let total_text_size = text_size * item_count;
-    let remaining_space = full_size as i32 - total_text_size;
+    text_bb
+        .into_styled(OVERWRITE_STYLE)
+        .draw(display)
+        .unwrap();
 
-    // 3. Divide space by the number of gaps (item_count + 1 for edges)
-    remaining_space / (item_count + 1)
-}
-
-fn calculate_left_side_width(font_size: u32, char_count: i32) -> i32 {
-    font_size as i32 * char_count
+    etext.draw(display).unwrap();
 }
 
 pub(crate) fn draw_time_row_header<D>(display: &mut D)
@@ -74,9 +88,6 @@ where
 {
     let text_height = EVENT_FONT.character_size.height as i32;
     let mut exceeded_height: i32 = 0;
-
-    let padding = calculate_padding(display.size().height, text_height, 24);
-    info!("padding: {}", padding);
 
     let position = display.bounding_box().top_left;
 
@@ -90,56 +101,36 @@ where
         )
         .draw(display)
         .unwrap();
-        exceeded_height += text_height + padding;
+        exceeded_height += text_height + ROW_PADDING;
     }
     // height is at max
 }
 
-fn draw_base_calendar<D>(display: &mut D)
-where
-    D: DrawTarget<Color = Color> + OriginDimensions,
-    D::Error: core::fmt::Debug,
-{
-    let event_width = display.size().width / (DAYS_TO_DISPLAY + 1) as u32;
-    let start_x = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
-    let start_y = EVENT_FONT.character_size.height / 2;
-
-    let mut start_pos = Point::new(start_x, start_y as i32);
-    let mut finish_pos = Point::new(display.size().width as i32, start_pos.y);
-
-    Line::new(start_pos, finish_pos)
-        .into_styled(PrimitiveStyle::with_stroke(Color::Black, 1))
-        .draw(display)
-        .unwrap();
-}
-
 /// Calculates the starting position of the event based on the screen size
-fn calculate_start_height(display_height: u32, start_minute: u16) -> u32 {
-    log::trace!("display_height: {}", display_height);
+const fn calculate_start_height(start_minute: u16) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
-    let padding = calculate_padding(display_height, text_height, HOURS_TO_DISPLAY as i32);
+    let padding = ROW_PADDING;
 
     let one_hour_height = text_height + padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
-    log::trace!("one_minute: {}", one_minute);
     (one_minute * start_minute as f32) as u32 + (text_height / 2) as u32
 }
 
-fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
+const fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
     if char_count == 0 {
         return 0;
     }
 
     (char_count * font.character_size.width as u16)
         + ((char_count - 1) * font.character_spacing as u16)
+        + font.character_size.width as u16 / 2
 }
 
 /// Calculates the ending position of the event based on the screen size
-fn calculate_end_height(display_height: u32, end_minute: u16) -> u32 {
-    log::trace!("display_height: {}", display_height);
+const fn calculate_end_height(end_minute: u16) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
-    let padding = calculate_padding(display_height, text_height, HOURS_TO_DISPLAY as i32);
+    let padding = ROW_PADDING;
     let one_hour_height = text_height + padding;
     let one_minute = one_hour_height as f32 / 60.0;
     (one_minute * end_minute as f32) as u32 + (text_height / 2) as u32
@@ -164,9 +155,47 @@ where
         display.bounding_box().top_left.y,
     );
 
-    Text::with_text_style(&fmt_time, pos, MINI_TEXT_STYLE, text_style)
+    let etext = Text::with_text_style(&fmt_time, pos, MINI_TEXT_STYLE, text_style);
+
+    let mut text_bb = etext.bounding_box();
+    text_bb.size.width += 3;
+    text_bb.size.height += 1;
+    text_bb.top_left.x -= 2;
+
+    text_bb
+        .into_styled(BORDERLESS_OVERWRITE_STYLE)
         .draw(display)
         .unwrap();
+
+    etext.draw(display).unwrap();
+}
+
+pub fn draw_base_calendar<D>(display: &mut D)
+where
+    D: DrawTarget<Color = Color> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
+    let text_height = EVENT_FONT.character_size.height as i32;
+    let text_width = EVENT_FONT.character_size.width as i32;
+    let mut exceeded_height: i32 = 0;
+
+    let position = display.bounding_box().top_left;
+
+    for _ in START_DISPLAY_HOUR..=HOURS_TO_DISPLAY {
+        let start_pos = position + Point::new(text_width * 6, exceeded_height + text_height / 2);
+        let finish_pos = position
+            + Point::new(
+                display.size().width as i32,
+                exceeded_height + text_height / 2,
+            );
+
+        Line::new(start_pos, finish_pos)
+            .into_styled(PrimitiveStyle::with_stroke(Color::Black, 1))
+            .draw(display)
+            .unwrap();
+        exceeded_height += text_height + ROW_PADDING;
+    }
+    // height is at max
 }
 
 pub(crate) fn draw_time_ticker<D>(display: &mut D, time: &jiff::Zoned)
@@ -177,7 +206,7 @@ where
     let x = START_POS;
     let end_x = START_POS + 40;
 
-    let y = calculate_start_height(display.size().height, date_to_mins(time));
+    let y = calculate_start_height(date_to_mins(time));
 
     let end_y = y;
 
@@ -195,12 +224,17 @@ where
     let x = START_POS;
     let end_x = calculate_text_width(text.chars().count() as u16, EVENT_FONT);
 
-    let y = calculate_start_height(display.size().height, start_minute);
+    let y = calculate_start_height(start_minute);
 
-    let end_y = calculate_end_height(display.size().height, end_minute);
+    let mut end_y = calculate_end_height(end_minute);
+
+    let min_height = EVENT_FONT.character_size.height + 4; // font + padding
+    if end_y - y < min_height {
+        end_y = y + min_height;
+    }
 
     Rectangle::new(Point::new(x, y as i32), Size::new(end_x as u32, end_y - y))
-        .into_styled(PrimitiveStyle::with_stroke(Color::Black, 1))
+        .into_styled(OVERWRITE_STYLE)
         .draw(display)
         .unwrap();
 
@@ -252,23 +286,28 @@ where
     .unwrap();
 }
 
-fn draw_days<D>(display: &mut D, count: u8)
+pub fn draw_days<D>(display: &mut D, current_day: &jiff::civil::Weekday, count: u8)
 where
     D: DrawTarget<Color = Color> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    let left_padding: i32 = calculate_left_side_width(EVENT_FONT.character_size.width, 5 + 1);
-    let starting_x = START_POS + left_padding + 5;
+    let starting_x = START_POS;
     let y = display.bounding_box().size.height - EVENT_FONT.character_size.height;
     let mut x_offset = 0;
-    for day in 0..count {
+    // max 7 days supported
+    let mut days: heapless::Vec<jiff::civil::Weekday, 7> = heapless::Vec::new();
+    for i in 0..count.clamp(1, 7) {
+        days.push(current_day.wrapping_add(i as i64)).unwrap();
+    }
+    for day in days {
         let day_text = match day {
-            0 => "Today",
-            1 => "Tomorrow",
-            2 => "Overmorrow",
-            _ => {
-                todo!()
-            }
+            jiff::civil::Weekday::Monday => "Monday",
+            jiff::civil::Weekday::Tuesday => "Tuesday",
+            jiff::civil::Weekday::Wednesday => "Wednesday",
+            jiff::civil::Weekday::Thursday => "Thursday",
+            jiff::civil::Weekday::Friday => "Friday",
+            jiff::civil::Weekday::Saturday => "Saturday",
+            jiff::civil::Weekday::Sunday => "Sunday",
         };
         x_offset += day_text.chars().count() as i32 * EVENT_FONT.character_size.width as i32 + 15;
         let pos = Point::new(starting_x + x_offset, y as i32);
