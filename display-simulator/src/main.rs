@@ -1,28 +1,20 @@
 use embedded_graphics::prelude::*;
 use embedded_graphics_simulator::SimulatorDisplay;
-use jiff::{
-    civil::{Date, DateTime},
-    tz::{self, TimeZone},
-    SignedDuration, Zoned,
-};
+use jiff::{Zoned, civil::DateTime, tz::TimeZone};
 use weact_studio_epd::Color;
 
 #[path = "../../src/display.rs"]
 mod display;
 
-fn loc_date_to_mins(dt: &DateTime) -> u16 {
-    log::info!("Converting local date to minutes: {:?}", dt);
-    (dt.hour() as u16 * 60 + dt.minute() as u16) as u16
-}
-
 fn sample_event<'a>(
-    start_time: &DateTime,
-    end_time: &DateTime,
+    start_time: DateTime,
+    end_time: DateTime,
     title: &'a str,
-) -> (u16, u16, &'a str) {
+) -> (Zoned, Zoned, &'a str) {
+    let tz = TimeZone::UTC;
     (
-        loc_date_to_mins(start_time),
-        loc_date_to_mins(end_time),
+        start_time.to_zoned(tz.clone()).unwrap(),
+        end_time.to_zoned(tz).unwrap(),
         title,
     )
 }
@@ -36,21 +28,31 @@ fn main() {
 
     display::draw_time_row_header(&mut display);
 
-    let events: &[(u16, u16, &str)] = &[
+    let events: Vec<(Zoned, Zoned, &str)> = vec![
         sample_event(
-            &"2026-07-11T00:00:00".parse().unwrap(),
-            &"2026-07-11T01:30:00".parse().unwrap(),
+            "2026-07-11T00:00:00".parse().unwrap(),
+            "2026-07-11T01:30:00".parse().unwrap(),
             "Morning",
         ),
         sample_event(
-            &"2026-07-11T08:10:00".parse().unwrap(),
-            &"2026-07-11T08:20:00".parse().unwrap(),
+            "2026-07-11T08:10:00".parse().unwrap(),
+            "2026-07-11T08:20:00".parse().unwrap(),
             "Breakfast",
         ),
         sample_event(
-            &"2026-07-11T23:00:00".parse().unwrap(),
-            &"2026-07-11T23:59:00".parse().unwrap(),
+            "2026-07-11T08:00:00".parse().unwrap(),
+            "2026-07-11T14:00:00".parse().unwrap(),
+            "Work",
+        ),
+        sample_event(
+            "2026-07-11T23:00:00".parse().unwrap(),
+            "2026-07-11T23:59:00".parse().unwrap(),
             "Midnight",
+        ),
+        sample_event(
+            "2026-07-11T16:00:00".parse().unwrap(),
+            "2026-07-11T17:00:00".parse().unwrap(),
+            "Very very very long event name",
         ),
     ];
 
@@ -60,7 +62,7 @@ fn main() {
     display::draw_sync_time(&mut display, &now);
     display::draw_days(&mut display, &now.weekday(), 3);
 
-    for &(start, end, title) in events {
+    for (start, end, title) in &events {
         display::draw_event(&mut display, start, end, title);
     }
 

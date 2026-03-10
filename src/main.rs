@@ -19,11 +19,11 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
-use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use crate::server::{WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU32, AtomicU8};
+use portable_atomic::{AtomicU8, AtomicU32};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
