@@ -51,7 +51,7 @@ fn main() {
         ),
         sample_event(
             "2026-07-11T16:00:00".parse().unwrap(),
-            "2026-07-11T17:00:00".parse().unwrap(),
+            "2026-07-11T17:59:00".parse().unwrap(),
             "Very very very long event name",
         ),
     ];

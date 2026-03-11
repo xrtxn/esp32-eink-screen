@@ -14,11 +14,11 @@ use log::info;
 use weact_studio_epd::graphics::Display420BlackWhite;
 use weact_studio_epd::Color as EpdColor;
 
-const START_DISPLAY_HOUR: u8 = 6;
-const END_DISPLAY_HOUR: u8 = 14;
+const START_DISPLAY_HOUR: u8 = 10;
+const DISPLAY_HOURS: u8 = validate_hours(START_DISPLAY_HOUR, 7);
 pub const DISPLAY_WIDTH: u32 = 300;
 pub const DISPLAY_HEIGHT: u32 = 400;
-const EXTRA_BOTTOM_SPACE: i32 = 30;
+const EXTRA_BOTTOM_SPACE: i32 = 35;
 const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = calculate_text_width(5, EVENT_FONT) as i32;
@@ -37,11 +37,20 @@ const BORDERLESS_OVERWRITE_STYLE: PrimitiveStyle<EpdColor> =
     PrimitiveStyle::with_fill(EpdColor::White);
 
 const fn calculate_row_padding(start_hour: u8, end_hour: u8) -> i32 {
+    assert!(
+        end_hour > start_hour,
+        "End hour must be greater than start hour"
+    );
     let text_height = EVENT_FONT.character_size.height as i32;
     let item_count = (end_hour - start_hour) as i32;
     let total_text_size = text_height * item_count;
     let remaining_space = DISPLAY_HEIGHT as i32 - EXTRA_BOTTOM_SPACE - total_text_size;
     remaining_space / (item_count)
+}
+
+const fn validate_hours(start: u8, duration: u8) -> u8 {
+    assert!(start + duration <= 24, "Display hours exceed 24-hour limit");
+    duration
 }
 
 pub(crate) fn add_footer_info<D>(display: &mut D)
@@ -91,7 +100,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for hour in START_DISPLAY_HOUR..=END_DISPLAY_HOUR {
+    for hour in START_DISPLAY_HOUR..=START_DISPLAY_HOUR + DISPLAY_HOURS {
         let fmt_hour: heapless::String<5> = hformat!("{:0>2}:00", hour).unwrap();
         Text::with_baseline(
             &fmt_hour,
@@ -101,7 +110,8 @@ where
         )
         .draw(display)
         .unwrap();
-        let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+        let row_padding =
+            calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
         exceeded_height += text_height + row_padding;
     }
     // height is at max
@@ -111,7 +121,7 @@ where
 fn calculate_start_height(start_minute: u16) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
@@ -122,7 +132,7 @@ fn calculate_start_height(start_minute: u16) -> u32 {
 const fn calculate_end_height(end_minute: u16) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
@@ -184,7 +194,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for _ in START_DISPLAY_HOUR..=END_DISPLAY_HOUR {
+    for _ in START_DISPLAY_HOUR..=START_DISPLAY_HOUR + DISPLAY_HOURS {
         let start_pos = position + Point::new(text_width * 6, exceeded_height + text_height / 2);
         let finish_pos = position
             + Point::new(
@@ -196,7 +206,8 @@ where
             .into_styled(PrimitiveStyle::with_stroke(EpdColor::Black, 1))
             .draw(display)
             .unwrap();
-        let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+        let row_padding =
+            calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
         exceeded_height += text_height + row_padding;
     }
     // height is at max
@@ -210,12 +221,14 @@ where
     let x = START_POS;
     let end_x = START_POS + 40;
 
-    if time.hour() < START_DISPLAY_HOUR as i8 || time.hour() > END_DISPLAY_HOUR as i8 {
+    if time.hour() < START_DISPLAY_HOUR as i8
+        || time.hour() > (START_DISPLAY_HOUR + DISPLAY_HOURS) as i8
+    {
         log::warn!(
             "Current time {} is out of display bounds ({}-{}), skipping time ticker",
             time,
             START_DISPLAY_HOUR,
-            END_DISPLAY_HOUR
+            START_DISPLAY_HOUR + DISPLAY_HOURS
         );
         return;
     }
@@ -235,7 +248,9 @@ where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    if start.hour() < START_DISPLAY_HOUR as i8 || end.hour() > END_DISPLAY_HOUR as i8 {
+    if end.hour() <= START_DISPLAY_HOUR as i8
+        || start.hour() >= (START_DISPLAY_HOUR + DISPLAY_HOURS) as i8
+    {
         log::warn!(
             "Event '{}' is out of display bounds ({}-{}), skipping",
             text,
@@ -248,8 +263,11 @@ where
     let x = START_POS;
     let end_x = calculate_text_width(text.chars().count() as u16, EVENT_FONT);
 
-    let y = calculate_start_height(date_to_mins(start) - START_DISPLAY_HOUR as u16 * 60);
-    let mut end_y = calculate_end_height(date_to_mins(end) - START_DISPLAY_HOUR as u16 * 60);
+    let y =
+        calculate_start_height(date_to_mins(start).saturating_sub(START_DISPLAY_HOUR as u16 * 60));
+    let mut end_y =
+        calculate_end_height(date_to_mins(end).saturating_sub(START_DISPLAY_HOUR as u16 * 60))
+            .clamp(0, calculate_end_height(DISPLAY_HOURS as u16 * 60));
 
     let available_height = end_y - y;
 
