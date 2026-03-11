@@ -24,7 +24,7 @@ fn main() {
 
     // 300x400 because we rotate the display
     let mut display =
-        SimulatorDisplay::<Color>::with_default_color(Size::new(300, 400), Color::White);
+        SimulatorDisplay::<Color>::with_default_color(Size::new(display::DISPLAY_WIDTH, display::DISPLAY_HEIGHT), Color::White);
 
     display::draw_time_row_header(&mut display);
 
@@ -60,7 +60,7 @@ fn main() {
     display::draw_time_ticker(&mut display, &now);
     display::draw_base_calendar(&mut display);
     display::draw_sync_time(&mut display, &now);
-    display::draw_days(&mut display, &now.weekday(), 3);
+    //display::draw_days(&mut display, &now.weekday(), 3);
 
     for (start, end, title) in &events {
         display::draw_event(&mut display, start, end, title);

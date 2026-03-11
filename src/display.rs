@@ -2,11 +2,9 @@ use core::u32;
 
 #[cfg(target_arch = "xtensa")]
 use alloc::format;
-#[cfg(target_arch = "xtensa")]
-use alloc::string::ToString;
 
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
-use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point, Size};
+use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
 use embedded_graphics::text::Text;
@@ -16,19 +14,11 @@ use log::info;
 use weact_studio_epd::graphics::Display420BlackWhite;
 use weact_studio_epd::Color as EpdColor;
 
-const DAYS_TO_DISPLAY: u8 = 3;
-const START_DISPLAY_HOUR: u8 = 0;
-const HOURS_TO_DISPLAY: u8 = 24;
-const DISPLAY_HEIGHT: u32 = 400;
-/// Padding between hour rows.
-/// (DISPLAY_HEIGHT - text_height * HOURS_TO_DISPLAY) / (HOURS_TO_DISPLAY + 1)
-const ROW_PADDING: i32 = {
-    let text_height = EVENT_FONT.character_size.height as i32;
-    let item_count = HOURS_TO_DISPLAY as i32;
-    let total_text_size = text_height * item_count;
-    let remaining_space = DISPLAY_HEIGHT as i32 - total_text_size;
-    remaining_space / (item_count + 1)
-};
+const START_DISPLAY_HOUR: u8 = 6;
+const END_DISPLAY_HOUR: u8 = 14;
+pub const DISPLAY_WIDTH: u32 = 300;
+pub const DISPLAY_HEIGHT: u32 = 400;
+const EXTRA_BOTTOM_SPACE: i32 = 30;
 const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = calculate_text_width(5, EVENT_FONT) as i32;
@@ -45,6 +35,14 @@ const OVERWRITE_STYLE: PrimitiveStyle<EpdColor> = PrimitiveStyleBuilder::new()
 
 const BORDERLESS_OVERWRITE_STYLE: PrimitiveStyle<EpdColor> =
     PrimitiveStyle::with_fill(EpdColor::White);
+
+const fn calculate_row_padding(start_hour: u8, end_hour: u8) -> i32 {
+    let text_height = EVENT_FONT.character_size.height as i32;
+    let item_count = (end_hour - start_hour) as i32;
+    let total_text_size = text_height * item_count;
+    let remaining_space = DISPLAY_HEIGHT as i32 - EXTRA_BOTTOM_SPACE - total_text_size;
+    remaining_space / (item_count)
+}
 
 pub(crate) fn add_footer_info<D>(display: &mut D)
 where
@@ -93,7 +91,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for hour in START_DISPLAY_HOUR..=HOURS_TO_DISPLAY {
+    for hour in START_DISPLAY_HOUR..=END_DISPLAY_HOUR {
         let fmt_hour: heapless::String<5> = hformat!("{:0>2}:00", hour).unwrap();
         Text::with_baseline(
             &fmt_hour,
@@ -103,30 +101,32 @@ where
         )
         .draw(display)
         .unwrap();
-        exceeded_height += text_height + ROW_PADDING;
+        let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+        exceeded_height += text_height + row_padding;
     }
     // height is at max
 }
 
 /// Calculates the starting position of the event based on the screen size
-const fn calculate_start_height(start_minute: u16) -> u32 {
+fn calculate_start_height(start_minute: u16) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let one_hour_height = text_height + ROW_PADDING;
+    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+    let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
     (one_minute * start_minute as f32) as u32 + (text_height / 2) as u32
 }
 
 /// Calculates the ending position of the event based on the screen size
-fn calculate_end_height(end_minute: u16) -> u32 {
+const fn calculate_end_height(end_minute: u16) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let one_hour_height = text_height + ROW_PADDING;
+    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+    let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
     let e = (one_minute * end_minute as f32) as u32 + (text_height / 2) as u32;
-    log::info!("Calculated end height for end_minute {}: {}", end_minute, e);
     e
 }
 
@@ -184,7 +184,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for _ in START_DISPLAY_HOUR..=HOURS_TO_DISPLAY {
+    for _ in START_DISPLAY_HOUR..=END_DISPLAY_HOUR {
         let start_pos = position + Point::new(text_width * 6, exceeded_height + text_height / 2);
         let finish_pos = position
             + Point::new(
@@ -196,7 +196,8 @@ where
             .into_styled(PrimitiveStyle::with_stroke(EpdColor::Black, 1))
             .draw(display)
             .unwrap();
-        exceeded_height += text_height + ROW_PADDING;
+        let row_padding = calculate_row_padding(START_DISPLAY_HOUR, END_DISPLAY_HOUR);
+        exceeded_height += text_height + row_padding;
     }
     // height is at max
 }
@@ -209,7 +210,17 @@ where
     let x = START_POS;
     let end_x = START_POS + 40;
 
-    let y = calculate_start_height(date_to_mins(time));
+    if time.hour() < START_DISPLAY_HOUR as i8 || time.hour() > END_DISPLAY_HOUR as i8 {
+        log::warn!(
+            "Current time {} is out of display bounds ({}-{}), skipping time ticker",
+            time,
+            START_DISPLAY_HOUR,
+            END_DISPLAY_HOUR
+        );
+        return;
+    }
+
+    let y = calculate_start_height(date_to_mins(time) - START_DISPLAY_HOUR as u16 * 60);
 
     let end_y = y;
 
@@ -224,11 +235,21 @@ where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
+    if start.hour() < START_DISPLAY_HOUR as i8 || end.hour() > END_DISPLAY_HOUR as i8 {
+        log::warn!(
+            "Event '{}' is out of display bounds ({}-{}), skipping",
+            text,
+            start,
+            end
+        );
+        return;
+    }
+
     let x = START_POS;
     let end_x = calculate_text_width(text.chars().count() as u16, EVENT_FONT);
 
-    let y = calculate_start_height(date_to_mins(start));
-    let mut end_y = calculate_end_height(date_to_mins(end));
+    let y = calculate_start_height(date_to_mins(start) - START_DISPLAY_HOUR as u16 * 60);
+    let mut end_y = calculate_end_height(date_to_mins(end) - START_DISPLAY_HOUR as u16 * 60);
 
     let available_height = end_y - y;
 
@@ -271,11 +292,11 @@ where
     let max_x = (time_bb.top_left.x + time_bb.size.width as i32)
         .max(title_bb.top_left.x + title_bb.size.width as i32);
 
-    let mut ebb = Rectangle::new(
+    let mut ebb = Rectangle::with_corners(
         Point::new(min_x, y as i32),
-        Size::new((max_x - min_x) as u32, end_y - y),
+        Point::new(max_x as i32, end_y as i32),
     );
-    ebb.size.height += 1; // this fixes the calculation
+
     extend_rectangle(&mut ebb);
 
     ebb.into_styled(OVERWRITE_STYLE).draw(display).unwrap();
