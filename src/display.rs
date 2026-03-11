@@ -22,9 +22,9 @@ const EXTRA_BOTTOM_SPACE: i32 = 15;
 const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = calculate_text_width(5, EVENT_FONT) as i32;
-const TEXT_STYLE: MonoTextStyle<'static, EpdColor> =
+const CHARACTER_STYLE: MonoTextStyle<'static, EpdColor> =
     MonoTextStyle::new(&EVENT_FONT, EpdColor::Black);
-const MINI_TEXT_STYLE: MonoTextStyle<'static, EpdColor> =
+const MINI_CHARACTER_STYLE: MonoTextStyle<'static, EpdColor> =
     MonoTextStyle::new(&MINI_FONT, EpdColor::Black);
 
 const OVERWRITE_STYLE: PrimitiveStyle<EpdColor> = PrimitiveStyleBuilder::new()
@@ -76,7 +76,7 @@ where
     let etext = Text::with_text_style(
         &build_info,
         display.bounding_box().bottom_right().unwrap(),
-        MINI_TEXT_STYLE,
+        MINI_CHARACTER_STYLE,
         text_style,
     );
 
@@ -105,7 +105,7 @@ where
         Text::with_baseline(
             &fmt_hour,
             position + Point::new(0, exceeded_height),
-            TEXT_STYLE,
+            CHARACTER_STYLE,
             embedded_graphics::text::Baseline::Top,
         )
         .draw(display)
@@ -169,7 +169,7 @@ where
         display.bounding_box().top_left.y,
     );
 
-    let etext = Text::with_text_style(&fmt_time, pos, MINI_TEXT_STYLE, text_style);
+    let etext = Text::with_text_style(&fmt_time, pos, MINI_CHARACTER_STYLE, text_style);
 
     let mut text_bb = etext.bounding_box();
     extend_rectangle(&mut text_bb);
@@ -285,7 +285,7 @@ where
     let time_text = Text::with_baseline(
         &time_str,
         Point::new(x, y as i32),
-        MINI_TEXT_STYLE,
+        MINI_CHARACTER_STYLE,
         embedded_graphics::text::Baseline::Top,
     );
 
@@ -299,7 +299,7 @@ where
     let title_text = Text::with_baseline(
         text,
         title_point,
-        TEXT_STYLE,
+        CHARACTER_STYLE,
         embedded_graphics::text::Baseline::Top,
     );
 
@@ -358,12 +358,32 @@ where
         Text::with_baseline(
             day_text,
             pos,
-            TEXT_STYLE,
+            CHARACTER_STYLE,
             embedded_graphics::text::Baseline::Top,
         )
         .draw(display)
         .unwrap();
     }
+}
+
+pub(crate) async fn draw_config<D>(display: &mut D, text: &str)
+where
+    D: DrawTarget<Color = EpdColor> + OriginDimensions,
+    D::Error: core::fmt::Debug,
+{
+    let text_style = embedded_graphics::text::TextStyleBuilder::new()
+        .alignment(embedded_graphics::text::Alignment::Center)
+        .baseline(embedded_graphics::text::Baseline::Middle)
+        .build();
+
+    Text::with_text_style(
+        text,
+        display.bounding_box().center(),
+        CHARACTER_STYLE,
+        text_style,
+    )
+    .draw(display)
+    .unwrap();
 }
 
 #[cfg(target_arch = "xtensa")]

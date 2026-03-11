@@ -17,6 +17,7 @@ mod wifi;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
+use weact_studio_epd::graphics::Display420BlackWhite;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
 use crate::server::{web_task, WEB_TASK_POOL_SIZE};
@@ -27,12 +28,11 @@ use portable_atomic::{AtomicU32, AtomicU8};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
+use embassy_futures::join::join;
 use embassy_time::Delay;
 
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
-use esp_hal::gpio::{InputPin, OutputPin};
-use esp_hal::peripherals::SPI2;
 use esp_hal::{
     gpio::{Input, Output},
     spi::master::Spi,
@@ -149,6 +149,17 @@ async fn main(spawner: Spawner) {
 
     log::info!("Microcontroller initialized");
 
+    let (mut display, mut driver) = init::init_display(
+        peripherals.GPIO12,
+        peripherals.GPIO11,
+        peripherals.SPI2,
+        peripherals.GPIO18,
+        peripherals.GPIO4,
+        peripherals.GPIO15,
+        peripherals.GPIO10,
+    )
+    .await;
+
     match boot_type {
         BootType::Display => {
             log::info!("Boot type is display");
@@ -157,19 +168,25 @@ async fn main(spawner: Spawner) {
                 &mut rtc,
                 net_stack,
                 trng,
-                peripherals.GPIO12,
-                peripherals.GPIO11,
-                peripherals.SPI2,
-                peripherals.GPIO18,
-                peripherals.GPIO4,
-                peripherals.GPIO15,
-                peripherals.GPIO10,
+                &mut display,
+                &mut driver,
             )
             .await;
         }
         BootType::Config => {
             log::info!("Boot type is config");
-            run_config_mode(spawner, net_stack, flash).await;
+            let text = alloc::format!(
+                "Wifi: {}\nPassword: {}\nIp: {}",
+                env!("AP_SSID"),
+                env!("AP_PASS"),
+                ip_config.address.address()
+            );
+
+            join(run_config_mode(spawner, net_stack, flash), async {
+                display::draw_config(&mut display, text.as_str()).await;
+                driver.full_update(&display).await.unwrap();
+            })
+            .await;
         }
     }
 }
@@ -207,13 +224,8 @@ async fn run_display_mode(
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     net_stack: embassy_net::Stack<'_>,
     trng: &mut esp_hal::rng::Trng,
-    sclk: impl OutputPin + 'static,
-    mosi: impl OutputPin + 'static,
-    spi: SPI2<'static>,
-    dc: impl OutputPin + 'static,
-    rst: impl OutputPin + 'static,
-    busy: impl InputPin + 'static,
-    cs: impl OutputPin + 'static,
+    display: &mut Display420BlackWhite,
+    driver: &mut EpdDriver,
 ) {
     // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
     if prev_boot_count.is_multiple_of(5) {
@@ -227,8 +239,7 @@ async fn run_display_mode(
 
     let events = networking::get_events(trng, rtc, net_stack).await;
 
-    let (mut display, mut driver) = init::init_display(sclk, mosi, spi, dc, rst, busy, cs).await;
-    display::write_to_screen(&mut display, &mut driver, events, rtc).await;
+    display::write_to_screen(display, driver, events, rtc).await;
 }
 
 async fn run_config_mode(
