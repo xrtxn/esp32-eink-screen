@@ -15,10 +15,10 @@ use weact_studio_epd::graphics::Display420BlackWhite;
 use weact_studio_epd::Color as EpdColor;
 
 const START_DISPLAY_HOUR: u8 = 10;
-const DISPLAY_HOURS: u8 = validate_hours(START_DISPLAY_HOUR, 7);
+const DISPLAY_HOURS: u8 = validate_hours(START_DISPLAY_HOUR, 6);
 pub const DISPLAY_WIDTH: u32 = 300;
 pub const DISPLAY_HEIGHT: u32 = 400;
-const EXTRA_BOTTOM_SPACE: i32 = 35;
+const EXTRA_BOTTOM_SPACE: i32 = 15;
 const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
 const START_POS: i32 = calculate_text_width(5, EVENT_FONT) as i32;
@@ -248,8 +248,8 @@ where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    if end.hour() <= START_DISPLAY_HOUR as i8
-        || start.hour() >= (START_DISPLAY_HOUR + DISPLAY_HOURS) as i8
+    if end.hour() < START_DISPLAY_HOUR as i8
+        || start.hour() > (START_DISPLAY_HOUR + DISPLAY_HOURS) as i8
     {
         log::warn!(
             "Event '{}' is out of display bounds ({}-{}), skipping",
