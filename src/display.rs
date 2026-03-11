@@ -398,12 +398,6 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         for eevent in event.events {
             let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());
             let end_dt = eevent.dtend.unwrap().to_zoned(tz.clone());
-            log::info!(
-                "Event: {}, start: {}, end: {}",
-                eevent.summary.unwrap_or("No summary"),
-                start_dt,
-                end_dt
-            );
             draw_event(
                 display,
                 &start_dt,

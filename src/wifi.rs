@@ -1,4 +1,6 @@
 use alloc::string::ToString;
+use edge_nal::UdpBind;
+use edge_nal_embassy::{Udp, UdpBuffers};
 use embassy_net::Runner;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
@@ -12,7 +14,8 @@ use static_cell::StaticCell;
 
 use crate::storage::NvsConfig;
 
-static NETWORK_STACK: StaticCell<embassy_net::StackResources<4>> = StaticCell::new();
+static NETWORK_STACK: StaticCell<embassy_net::StackResources<5>> = StaticCell::new();
+static DHCP_UDP_BUFFERS: StaticCell<UdpBuffers<1>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
 static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
 
@@ -56,6 +59,36 @@ pub async fn connection(
 #[embassy_executor::task]
 pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await
+}
+
+#[embassy_executor::task]
+pub async fn dhcp_server_task(stack: embassy_net::Stack<'static>) {
+    let server_ip = core::net::Ipv4Addr::new(192, 168, 0, 1);
+    let mut gw_buf = [server_ip];
+    let server_options =
+        edge_dhcp::server::ServerOptions::new(server_ip, Some(&mut gw_buf));
+    let mut server = edge_dhcp::server::Server::<_, 4>::new_with_et(server_ip);
+
+    let buffers = DHCP_UDP_BUFFERS.init(UdpBuffers::new());
+    let udp = Udp::new(stack, buffers);
+    let local = core::net::SocketAddr::new(
+        core::net::IpAddr::V4(core::net::Ipv4Addr::UNSPECIFIED),
+        67,
+    );
+    let mut socket = udp
+        .bind(local)
+        .await
+        .expect("DHCP: failed to bind to port 67");
+
+    let mut buf = [0u8; 1500];
+
+    loop {
+        if let Err(e) =
+            edge_dhcp::io::server::run(&mut server, &server_options, &mut socket, &mut buf).await
+        {
+            log::error!("DHCP server error: {:?}", e);
+        }
+    }
 }
 
 #[embassy_executor::task]
@@ -114,12 +147,13 @@ pub fn start_ap(
     let (net_stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(embassy_net::StackResources::<4>::new()),
+        NETWORK_STACK.init(embassy_net::StackResources::<5>::new()),
         seed,
     );
 
     spawner.spawn(ap_task(wifi_controller)).ok();
     spawner.spawn(net_task(runner)).ok();
+    spawner.spawn(dhcp_server_task(net_stack)).ok();
 
     (net_stack, trng)
 }
@@ -154,7 +188,7 @@ pub fn start_con(
     let (net_stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(embassy_net::StackResources::<4>::new()),
+        NETWORK_STACK.init(embassy_net::StackResources::<5>::new()),
         seed,
     );
 

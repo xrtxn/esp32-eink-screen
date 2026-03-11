@@ -100,6 +100,11 @@ sntpc-net-embassy = "0.8"
 picoserve = { version = "0.18.0", features = ["embassy", "log", "alloc", "json"] }
 
 
+# DHCP server (for AP mode)
+edge-dhcp = { version = "0.7", features = ["log"] }
+edge-nal = "0.6"
+edge-nal-embassy = { version = "0.8", default-features = false, features = ["udp", "proto-ipv4", "medium-ethernet", "log"] }
+
 # NVS
 postcard = "1.1.0"
 serde = { version = "1.0.*", default-features = false, features = ["derive"] }

@@ -49,7 +49,7 @@ extern crate alloc;
 static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
-pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
+pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
 
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
@@ -68,17 +68,14 @@ pub(crate) enum BootType {
 }
 
 impl BootType {
-    /// Store the boot type into RTC-persistent memory.
     pub(crate) fn set(val: BootType) {
         BOOT_TYPES.store(val as u8, core::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Read the boot type from RTC-persistent memory.
     pub(crate) fn get() -> BootType {
         Self::from_u8(BOOT_TYPES.load(core::sync::atomic::Ordering::Relaxed))
     }
 
-    /// Convert a raw `u8` (as stored in the atomic) to a `BootType`.
     pub(crate) fn from_u8(val: u8) -> BootType {
         match val {
             0 => BootType::Display,
