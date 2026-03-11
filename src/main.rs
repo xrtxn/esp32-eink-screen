@@ -19,25 +19,24 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
-use crate::server::{WEB_TASK_POOL_SIZE, web_task};
+use crate::server::{web_task, WEB_TASK_POOL_SIZE};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU8, AtomicU32};
+use portable_atomic::{AtomicU32, AtomicU8};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
+use embassy_time::Delay;
 
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{InputPin, OutputPin};
 use esp_hal::peripherals::SPI2;
 use esp_hal::{
-    delay::Delay,
     gpio::{Input, Output},
     spi::master::Spi,
 };
-use jiff::Zoned;
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
 use esp_backtrace as _;
@@ -54,7 +53,7 @@ pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
-        ExclusiveDevice<Spi<'static, esp_hal::Blocking>, Output<'static>, Delay>,
+        ExclusiveDevice<Spi<'static, esp_hal::Async>, Output<'static>, Delay>,
         Output<'static>,
     >,
     Input<'static>,
@@ -124,18 +123,12 @@ async fn main(spawner: Spawner) {
     let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    let mut io = esp_hal::gpio::Io::new(peripherals.IO_MUX);
-    io.set_interrupt_handler(hardware::handler);
-
     let button = peripherals.GPIO0;
 
     let btn_config = esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up);
-    let mut button = Input::new(button, btn_config);
+    let button = Input::new(button, btn_config);
 
-    critical_section::with(|cs| {
-        button.listen(esp_hal::gpio::Event::FallingEdge);
-        hardware::BUTTON.borrow_ref_mut(cs).replace(button)
-    });
+    spawner.must_spawn(hardware::button_task(button));
 
     let (net_stack, trng) = if boot_type == BootType::Display {
         wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1)

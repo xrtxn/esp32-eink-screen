@@ -1,18 +1,18 @@
 use display_interface_spi::SPIInterface;
+use embassy_time::Delay;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::gpio::{InputPin, OutputPin};
 use esp_hal::peripherals::SPI2;
 use esp_hal::{
-    delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     spi::{
-        Mode,
         master::{Config, Spi},
+        Mode,
     },
     time::Rate,
 };
-use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
+use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 
 pub(crate) async fn init_display(
     sclk_pin: impl OutputPin + 'static,
@@ -31,24 +31,24 @@ pub(crate) async fn init_display(
     )
     .unwrap()
     .with_sck(sclk_pin)
-    .with_mosi(mosi_pin);
+    .with_mosi(mosi_pin)
+    .into_async();
 
     let dc = Output::new(dc_pin, Level::Low, OutputConfig::default());
     let rst = Output::new(rst_pin, Level::High, OutputConfig::default());
     let busy = Input::new(busy_pin, InputConfig::default().with_pull(Pull::None));
     let cs = Output::new(cs_pin, Level::High, OutputConfig::default());
 
-    log::info!("Intializing SPI Device...");
-    let spi_device =
-        ExclusiveDevice::new(spi_bus, cs, Delay::new()).expect("SPI device initialize error");
+    log::info!("Initializing SPI Device...");
+    let spi_device = ExclusiveDevice::new(spi_bus, cs, Delay).expect("SPI device initialize error");
     let spi_interface = SPIInterface::new(spi_device, dc);
 
-    log::info!("Intializing EPD...");
-    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay::new());
+    log::info!("Initializing EPD...");
+    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay);
     let mut display = Display420BlackWhite::new();
     // set it to be longer not wider
     display.set_rotation(DisplayRotation::Rotate270);
-    driver.init().unwrap();
+    driver.init().await.unwrap();
     log::info!("EPD initialized!");
     (display, driver)
 }

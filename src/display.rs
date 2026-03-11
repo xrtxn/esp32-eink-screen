@@ -367,11 +367,11 @@ where
 }
 
 #[cfg(target_arch = "xtensa")]
-use display_interface::WriteOnlyDataCommand;
+use display_interface::AsyncWriteOnlyDataCommand;
 #[cfg(target_arch = "xtensa")]
-use embedded_hal::delay::DelayNs;
+use embedded_hal::digital::OutputPin as EhalOutputPin;
 #[cfg(target_arch = "xtensa")]
-use embedded_hal::digital::{InputPin as EhalInputPin, OutputPin as EhalOutputPin};
+use embedded_hal_async::{delay::DelayNs, digital::Wait};
 #[cfg(target_arch = "xtensa")]
 use esp_hal::rtc_cntl::Rtc;
 #[cfg(target_arch = "xtensa")]
@@ -387,8 +387,8 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     events: crate::networking::VcalsType<'_>,
     rtc: &mut Rtc<'_>,
 ) where
-    DI: WriteOnlyDataCommand,
-    BSY: EhalInputPin,
+    DI: AsyncWriteOnlyDataCommand,
+    BSY: embedded_hal::digital::InputPin + Wait,
     RST: EhalOutputPin,
     DELAY: DelayNs,
 {
@@ -418,7 +418,7 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     let time = hardware::get_time(rtc);
     crate::display::draw_sync_time(display, &time);
     crate::display::draw_time_ticker(display, &time);
-    driver.full_update(display).unwrap();
+    driver.full_update(display).await.unwrap();
 
     crate::hardware::go_to_deep_sleep(rtc);
 }
