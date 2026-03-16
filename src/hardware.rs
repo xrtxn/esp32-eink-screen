@@ -1,10 +1,10 @@
 use esp_hal::{
     gpio::{AnyPin, Input},
     rtc_cntl::sleep::{Ext0WakeupSource, TimerWakeupSource, WakeupLevel},
-    system::{SleepSource, wakeup_cause},
+    system::{wakeup_cause, SleepSource},
 };
 
-use crate::{BOOT_TYPES, BootType};
+use crate::{BootType, BOOT_TYPES};
 
 const SLEEP_DURATION: u64 = 300;
 const TZ: jiff::tz::TimeZone = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
@@ -29,12 +29,18 @@ pub(crate) fn get_time(rtc: &esp_hal::rtc_cntl::Rtc<'_>) -> jiff::Zoned {
 pub(crate) fn apply_wakeup_boot_type() {
     match wakeup_cause() {
         // GPIO0 button was pressed
-        SleepSource::Ext0 => BootType::set(BootType::Config),
+        SleepSource::Ext0 => {
+            log::info!("Woke up from GPIO0, setting boot type to Config");
+            BootType::set(BootType::Config)
+        }
         // Timer expired
-        SleepSource::Timer => BootType::set(BootType::Display),
+        SleepSource::Timer => {
+            log::info!("Woke up from timer, setting boot type to Display");
+            BootType::set(BootType::Display)
+        }
         // For other sources keep the current state
         _ => {}
-    }
+    };
 }
 
 #[embassy_executor::task]

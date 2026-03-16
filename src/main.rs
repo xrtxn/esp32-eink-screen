@@ -24,7 +24,7 @@ use crate::server::{web_task, WEB_TASK_POOL_SIZE};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU32, AtomicU8};
+use portable_atomic::{AtomicBool, AtomicU32, AtomicU8};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -46,7 +46,7 @@ use crate::hardware::go_to_deep_sleep;
 extern crate alloc;
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
-static BOOT_COUNT: AtomicU32 = AtomicU32::new(0);
+static DISPLAY_SLEEP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
@@ -96,27 +96,25 @@ async fn main(spawner: Spawner) {
 
     let w = peripherals.WIFI;
 
-    #[cfg(not(debug_assertions))]
     hardware::apply_wakeup_boot_type();
 
-    let boot_count = BOOT_COUNT.load(core::sync::atomic::Ordering::Relaxed);
-
-    #[cfg(debug_assertions)]
-    if boot_count == 0 {
-        log::debug!("Debug mode, setting default boot type to Config");
-        BootType::set(BootType::Config);
-    }
+    let prev_boot_count = DISPLAY_SLEEP_COUNT.load(core::sync::atomic::Ordering::Relaxed);
+    log::info!("Successful sleep wake count: {}", prev_boot_count + 1);
 
     let boot_type = BootType::get();
+
+    match boot_type {
+        BootType::Display => {
+            DISPLAY_SLEEP_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
+        BootType::Config => (),
+    }
 
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
     let stored_config = storage::read_config(flash).await;
 
     let creds = get_credentials(stored_config);
-
-    let prev_boot_count = BOOT_COUNT.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-    log::info!("Boot count: {}", prev_boot_count + 1);
 
     // this affects the remaining stack
     esp_alloc::heap_allocator!(size: 64 * 1024);

@@ -26,7 +26,13 @@ fn build_index_html() {
         .expect("Failed to read web/static/pico.min.css");
 
     // Replace the placeholder that was used by the Askama template
-    let final_html = html.replace("/* CSS_PLACEHOLDER */", &css);
+    // Remove css link which is for local development
+    let final_html = html
+        .lines()
+        .filter(|line| !line.contains(r#"link rel="stylesheet""#))
+        .collect::<Vec<&str>>()
+        .join("\n")
+        .replace("/* CSS_PLACEHOLDER */", &css);
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_html = format!("{out_dir}/index.html");
