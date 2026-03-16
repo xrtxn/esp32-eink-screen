@@ -100,7 +100,6 @@ sntpc-net-embassy = "0.8"
 # Web server
 picoserve = { version = "0.18.0", features = ["embassy", "log", "alloc", "json"] }
 
-
 # DHCP server (for AP mode)
 edge-dhcp = { version = "0.7", features = ["log"] }
 edge-nal = "0.6"

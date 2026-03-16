@@ -6,13 +6,13 @@ use esp_hal::peripherals::SPI2;
 use esp_hal::{
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     spi::{
-        master::{Config, Spi},
         Mode,
+        master::{Config, Spi},
     },
     time::Rate,
 };
-use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
+use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
 
 pub(crate) async fn init_display(
     sclk_pin: impl OutputPin + 'static,

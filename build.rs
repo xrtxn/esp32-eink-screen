@@ -34,7 +34,6 @@ fn build_index_html() {
 
     std::fs::write(&out_html, final_html.as_bytes()).expect("Failed to write built index.html");
 
-    // Remove any previous .gz so gzip -k doesn't refuse to overwrite
     let _ = std::fs::remove_file(&out_gz);
 
     Command::new("gzip")

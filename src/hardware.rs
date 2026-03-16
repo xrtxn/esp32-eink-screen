@@ -1,10 +1,10 @@
 use esp_hal::{
     gpio::{AnyPin, Input},
     rtc_cntl::sleep::{Ext0WakeupSource, TimerWakeupSource, WakeupLevel},
-    system::{wakeup_cause, SleepSource},
+    system::{SleepSource, wakeup_cause},
 };
 
-use crate::{BootType, BOOT_TYPES};
+use crate::{BOOT_TYPES, BootType};
 
 const SLEEP_DURATION: u64 = 300;
 const TZ: jiff::tz::TimeZone = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));

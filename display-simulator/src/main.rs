@@ -23,8 +23,10 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // 300x400 because we rotate the display
-    let mut display =
-        SimulatorDisplay::<Color>::with_default_color(Size::new(display::DISPLAY_WIDTH, display::DISPLAY_HEIGHT), Color::White);
+    let mut display = SimulatorDisplay::<Color>::with_default_color(
+        Size::new(display::DISPLAY_WIDTH, display::DISPLAY_HEIGHT),
+        Color::White,
+    );
 
     display::draw_time_row_header(&mut display);
 

@@ -10,9 +10,9 @@ use embedded_graphics::primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder,
 use embedded_graphics::text::Text;
 use heapless::format as hformat;
 use log::info;
+use weact_studio_epd::Color as EpdColor;
 #[cfg(target_arch = "xtensa")]
 use weact_studio_epd::graphics::Display420BlackWhite;
-use weact_studio_epd::Color as EpdColor;
 
 const START_DISPLAY_HOUR: u8 = 10;
 const DISPLAY_HOURS: u8 = validate_hours(START_DISPLAY_HOUR, 6);

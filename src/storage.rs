@@ -76,7 +76,7 @@ pub(crate) async fn read_config(
         .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
         .await
         .ok()
-        .map(|item| item.unwrap());
+        .and_then(|item| item);
 
     log::info!("Read config: {:?}", nvs_config);
     nvs_config

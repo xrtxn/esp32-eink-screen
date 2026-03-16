@@ -61,7 +61,7 @@ type EpdDriver = WeActStudio420BlackWhiteDriver<
     Delay,
 >;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub(crate) enum BootType {
     Display = 0,
     Config = 1,
@@ -98,6 +98,14 @@ async fn main(spawner: Spawner) {
 
     #[cfg(not(debug_assertions))]
     hardware::apply_wakeup_boot_type();
+
+    let boot_count = BOOT_COUNT.load(core::sync::atomic::Ordering::Relaxed);
+
+    #[cfg(debug_assertions)]
+    if boot_count == 0 {
+        log::debug!("Debug mode, setting default boot type to Config");
+        BootType::set(BootType::Config);
+    }
 
     let boot_type = BootType::get();
 
