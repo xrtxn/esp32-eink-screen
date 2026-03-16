@@ -48,6 +48,19 @@ impl AppBuilder for AppProps {
                     },
                 ),
             )
+            .route(
+                "/api/config/caldav",
+                picoserve::routing::post(
+                    move |picoserve::extract::Json(resp_caldav): picoserve::extract::Json<
+                        storage::CaldavCreds,
+                    >| async move {
+                        log::info!("Received config change request: {:?}", resp_caldav);
+                        let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+                        nvs.caldav = Some(resp_caldav);
+                        storage::write_config(flash, nvs).await;
+                    },
+                ),
+            )
     }
 }
 

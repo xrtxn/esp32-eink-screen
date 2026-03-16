@@ -24,7 +24,7 @@ use crate::server::{web_task, WEB_TASK_POOL_SIZE};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicBool, AtomicU32, AtomicU8};
+use portable_atomic::{AtomicU32, AtomicU8};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -50,6 +50,9 @@ static DISPLAY_SLEEP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
+
+#[esp_hal::ram(unstable(rtc_fast, persistent))]
+pub static INITIAL_NTP_SYNC: AtomicU8 = AtomicU8::new(0);
 
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
@@ -112,9 +115,6 @@ async fn main(spawner: Spawner) {
 
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
-    let stored_config = storage::read_config(flash).await;
-
-    let creds = get_credentials(stored_config);
 
     // this affects the remaining stack
     esp_alloc::heap_allocator!(size: 64 * 1024);
@@ -132,9 +132,37 @@ async fn main(spawner: Spawner) {
     let button = Input::new(button, btn_config);
 
     spawner.must_spawn(hardware::button_task(button));
+    let mut creds = None;
 
     let (net_stack, trng) = if boot_type == BootType::Display {
-        wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1)
+        let stored_config = storage::read_config(flash).await;
+
+        let config = match stored_config {
+            Some(config) => config,
+            _ => {
+                #[cfg(debug_assertions)]
+                {
+                    log::warn!("No config found; using compile-time credentials (debug build)");
+                    let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
+                    NvsConfig::new(Some(wifi_creds))
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    esp_hal::system::software_reset();
+                }
+            }
+        };
+
+        if config.wifi.is_none() || config.caldav.is_none() {
+            log::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
+            BootType::set(BootType::Config);
+            esp_hal::system::software_reset();
+        }
+
+        let wifi_creds = config.wifi.clone().unwrap();
+        creds = Some(config);
+
+        wifi::start_con(spawner, w, wifi_creds, peripherals.RNG, peripherals.ADC1)
     } else {
         wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1)
     };
@@ -168,7 +196,6 @@ async fn main(spawner: Spawner) {
 
     match boot_type {
         BootType::Display => {
-            log::info!("Boot type is display");
             run_display_mode(
                 prev_boot_count,
                 &mut rtc,
@@ -176,11 +203,11 @@ async fn main(spawner: Spawner) {
                 trng,
                 &mut display,
                 &mut driver,
+                creds.as_ref().unwrap(),
             )
             .await;
         }
         BootType::Config => {
-            log::info!("Boot type is config");
             let text = alloc::format!(
                 "Wifi: {}\nPassword: {}\nIp: {}",
                 env!("AP_SSID"),
@@ -197,34 +224,6 @@ async fn main(spawner: Spawner) {
     }
 }
 
-/// - If credentials exist and wifi is set, returns them.
-/// - If wifi is not set reboot to config mode
-fn get_credentials(stored_config: Option<NvsConfig>) -> NvsConfig {
-    match stored_config {
-        Some(ok) => match ok.wifi {
-            None => {
-                // WiFi credentials are missing; switch to config mode so the user can set them.
-                log::warn!("No WiFi credentials stored, rebooting into config mode");
-                BootType::set(BootType::Config);
-                esp_hal::system::software_reset();
-            }
-            _ => ok,
-        },
-        #[cfg(debug_assertions)]
-        None => {
-            log::warn!("No config found; using compile-time credentials (debug build)");
-            let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
-            NvsConfig::new(Some(wifi_creds))
-        }
-        #[cfg(not(debug_assertions))]
-        None => {
-            log::warn!("No config found, rebooting into config mode");
-            BootType::set(BootType::Config);
-            esp_hal::system::software_reset();
-        }
-    }
-}
-
 async fn run_display_mode(
     prev_boot_count: u32,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
@@ -232,18 +231,24 @@ async fn run_display_mode(
     trng: &mut esp_hal::rng::Trng,
     display: &mut Display420BlackWhite,
     driver: &mut EpdDriver,
+    config: &NvsConfig,
 ) {
     // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
-    if prev_boot_count.is_multiple_of(5) {
+    if prev_boot_count.is_multiple_of(5)
+        || INITIAL_NTP_SYNC.load(core::sync::atomic::Ordering::Relaxed) == 0
+    {
         log::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
         let time = networking::get_time(net_stack).await;
         // set_current_time_us expects microseconds
         rtc.set_current_time_us(
             (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
         );
+        INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
     }
 
-    let events = networking::get_events(trng, rtc, net_stack).await;
+    let caldav = config.caldav.clone().unwrap();
+
+    let events = networking::get_events(trng, rtc, net_stack, &caldav).await;
 
     display::write_to_screen(display, driver, events, rtc).await;
 }
@@ -266,7 +271,7 @@ async fn run_config_mode(
     }
 }
 
-fn extract_calendar_data(
+pub(crate) fn extract_calendar_data(
     data: &str,
 ) -> heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS> {
     let parsed = roxmltree::Document::parse(data).unwrap();

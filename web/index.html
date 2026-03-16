@@ -19,13 +19,18 @@
                 </ul>
                 <ul>
                     <li><a href="#wifi-config" class="contrast">Wifi</a></li>
-                    <li><a href="#" class="contrast">Credentials</a></li>
+                    <li>
+                        <a href="#caldav-config" class="contrast"
+                            >Credentials</a
+                        >
+                    </li>
                     <li><a href="#" class="contrast">Calendar</a></li>
                 </ul>
             </nav>
         </div>
-        <div class="container wifi-config">
-            <h1>Wifi</h1>
+
+        <div class="container" id="wifi-config">
+            <h2>Wifi</h2>
             <fieldset role="group">
                 <input
                     name="wifi-ssid"
@@ -43,37 +48,131 @@
                     minlength="8"
                     maxlength="32"
                 />
-                <input type="submit" value="Submit" onclick="sendData()" />
+                <input type="submit" value="Submit" onclick="sendWifiData()" />
             </fieldset>
         </div>
+
+        <div class="container" id="caldav-config" style="min-height: 1000px">
+            <h2>Caldav credentials</h2>
+            <fieldset role="group">
+                <input
+                    name="caldav-username"
+                    id="caldav-username"
+                    placeholder="Username"
+                    minlength="1"
+                    maxlength="32"
+                />
+                <input
+                    type="password"
+                    id="caldav-password"
+                    name="caldav-password"
+                    placeholder="Password"
+                    autocomplete="current-password"
+                    minlength="6"
+                    maxlength="32"
+                />
+            </fieldset>
+            <input
+                type="url"
+                id="caldav-url"
+                name="caldav-url"
+                placeholder="URL"
+                minlength="1"
+                maxlength="128"
+            />
+            <input type="submit" value="Submit" onclick="sendCaldavData()" />
+        </div>
+
+        <dialog id="success-dialog">
+            <article>
+                <header>
+                    <button
+                        aria-label="Close"
+                        rel="prev"
+                        onclick="
+                            document.getElementById('success-dialog').close()
+                        "
+                    ></button>
+                    <p>
+                        <strong>Successfully saved config!</strong>
+                    </p>
+                </header>
+                <p>You can now reboot the device</p>
+            </article>
+        </dialog>
+
+        <dialog id="error-dialog">
+            <article>
+                <header>
+                    <button
+                        aria-label="Close"
+                        rel="prev"
+                        onclick="
+                            document.getElementById('error-dialog').close()
+                        "
+                    ></button>
+                    <p>
+                        <strong>Error saving config!</strong>
+                    </p>
+                </header>
+                <p>
+                    There was a problem saving your configuration. Please try
+                    again.
+                </p>
+            </article>
+        </dialog>
+
         <script>
-            const sendData = async () => {
+            const sendData = async (endpoint, payload) => {
+                try {
+                    const response = await fetch(endpoint, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(payload),
+                    });
+
+                    if (response.ok) {
+                        console.log("Configuration updated successfully");
+                        document.getElementById("success-dialog").showModal();
+                    } else {
+                        console.error("Failed to update configuration");
+                        document.getElementById("error-dialog").showModal();
+                    }
+                } catch (error) {
+                    console.error("Error:", error);
+                    document.getElementById("error-dialog").showModal();
+                }
+            };
+
+            const sendWifiData = () => {
                 const ssid = document.getElementById("wifi-ssid").value;
                 const pass = document.getElementById("wifi-password").value;
 
                 console.log("SSID:", ssid);
                 console.log("Password:", pass);
 
-                try {
-                    const response = await fetch("/api/config/wifi", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            ssid: ssid,
-                            password: pass,
-                        }),
-                    });
+                sendData("/api/config/wifi", {
+                    ssid: ssid,
+                    password: pass,
+                });
+            };
 
-                    if (response.ok) {
-                        console.log("Configuration updated successfully");
-                    } else {
-                        console.error("Failed to update configuration");
-                    }
-                } catch (error) {
-                    console.error("Error:", error);
-                }
+            const sendCaldavData = () => {
+                const user = document.getElementById("caldav-username").value;
+                const pass = document.getElementById("caldav-password").value;
+                const url = document.getElementById("caldav-url").value;
+
+                console.log("Username:", user);
+                console.log("Password:", pass);
+                console.log("URL:", url);
+
+                sendData("/api/config/caldav", {
+                    username: user,
+                    password: pass,
+                    url: url,
+                });
             };
         </script>
     </body>

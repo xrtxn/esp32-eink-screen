@@ -111,6 +111,7 @@ serde = { version = "1.0.*", default-features = false, features = ["derive"] }
 esp-storage = { version = "0.8.1", features = ["esp32s3"] }
 sequential-storage = { version = "7.1.0", features = ["postcard"] }
 embassy-sync = "0.7.2"
+url = { version = "2.5.8", default-features = false }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

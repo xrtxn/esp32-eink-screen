@@ -1,15 +1,17 @@
 use core::fmt::Write;
 use core::net::{SocketAddr, SocketAddrV4};
-use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::udp::PacketMetadata;
+use embassy_net::Stack;
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use reqwless::{Certificate, TlsReference};
 use smoltcp::wire::DnsQueryType;
 use static_cell::StaticCell;
+
+use crate::storage::CaldavCreds;
 
 const NEXTCLOUD_CERT: &core::ffi::CStr = {
     // add missing null byte compile time
@@ -65,7 +67,7 @@ impl sntpc::NtpTimestampGenerator for NtpTimestamp {
 
 pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
     use embassy_net::udp::UdpSocket;
-    use sntpc::{NtpContext, get_time};
+    use sntpc::{get_time, NtpContext};
 
     let rx_meta = RX_META.init([PacketMetadata::EMPTY; 16]);
     let rx_buffer = RX_BUFFER.init([0; 4096]);
@@ -104,6 +106,7 @@ pub async fn network_req(
     date: jiff::civil::Date,
     cal_xml_buf: &mut heapless::String<TOTAL_VCAL_BUFFER>,
     req_buffer: &mut [u8; 8192],
+    creds: &CaldavCreds,
 ) {
     let mut fmt_date = heapless::String::<8>::new();
 
@@ -149,15 +152,18 @@ pub async fn network_req(
     .unwrap();
 
     // todo remove from prod
-    let origin = env!("ORIGIN");
-    let username = env!("CALDAV_USER");
-    let password = env!("CALDAV_PASS");
+    let url = creds.url.as_str();
+    let username = creds.username.as_str();
+    let password = creds.password.as_str();
+
+    let url = url::Url::parse(url).unwrap();
+    let origin = url.origin().ascii_serialization();
     // 64 long uid + max 64 long username
-    let path: heapless::String<128> =
-        heapless::format!("/remote.php/dav/calendars/{}/{}/", username, CALENDAR_ID).unwrap();
+    let path: heapless::String<256> =
+        heapless::format!("{}/{}/{}/", url.path(), username, CALENDAR_ID).unwrap();
 
     let mut request = client
-        .request(reqwless::request::Method::REPORT, origin)
+        .request(reqwless::request::Method::REPORT, &origin)
         .await
         .unwrap()
         .basic_auth(username, password)
@@ -189,6 +195,7 @@ pub(crate) async fn get_events<'a>(
     trng: &mut esp_hal::rng::Trng,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     stack: embassy_net::Stack<'_>,
+    credentials: &CaldavCreds,
 ) -> VcalsType<'a> {
     let tls = mbedtls_rs::Tls::new(trng).unwrap();
 
@@ -212,6 +219,7 @@ pub(crate) async fn get_events<'a>(
             time_from_rtc.to_zoned(jiff::tz::TimeZone::UTC).date(),
             cal_xml_buf,
             req_buffer,
+            credentials,
         );
         if let Ok(()) = embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
         {

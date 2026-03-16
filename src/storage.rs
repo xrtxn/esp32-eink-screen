@@ -19,24 +19,21 @@ pub(crate) fn init_flash(
     FLASH.init(Mutex::new(flash))
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Default, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
-    // pub caldav: Caldav,
+    pub caldav: Option<CaldavCreds>,
 }
 
 impl NvsConfig {
     pub fn new(wifi: Option<WifiCreds>) -> Self {
-        Self {
-            wifi,
-            // caldav: Default::default(),
-        }
+        Self { wifi, caldav: None }
     }
 }
 
 impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct WifiCreds {
     pub ssid: heapless::String<32>,
     pub password: heapless::String<32>,
@@ -51,8 +48,8 @@ impl WifiCreds {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Default, Debug)]
-pub struct Caldav {
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
+pub struct CaldavCreds {
     pub url: heapless::String<128>,
     pub username: heapless::String<32>,
     pub password: heapless::String<32>,
@@ -76,7 +73,7 @@ pub(crate) async fn read_config(
         .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
         .await
         .ok()
-        .and_then(|item| item);
+        .flatten();
 
     log::info!("Read config: {:?}", nvs_config);
     nvs_config
@@ -90,10 +87,7 @@ pub(crate) async fn write_config(
 
     let async_flash = BlockingAsync::new(&mut *borrow);
 
-    let mut data_buffer = [0u8; 256];
-
-    let mut serialized_buf = [0u8; 128];
-    let _ = postcard::to_slice(&config, &mut serialized_buf).expect("Failed to serialize config");
+    let mut data_buffer = [0u8; 512];
 
     let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
         async_flash,

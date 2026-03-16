@@ -12,7 +12,7 @@ use esp_radio::wifi::{
 };
 use static_cell::StaticCell;
 
-use crate::storage::NvsConfig;
+use crate::storage::{NvsConfig, WifiCreds};
 
 pub const IP_ADDR: [u8; 4] = [192, 168, 0, 1];
 
@@ -160,7 +160,7 @@ pub fn start_ap(
 pub fn start_con(
     spawner: embassy_executor::Spawner,
     wifi: WIFI<'static>,
-    creds: NvsConfig,
+    wifi_creds: WifiCreds,
     rng_per: RNG,
     adc1: ADC1,
 ) -> (embassy_net::Stack<'static>, &'static mut esp_hal::rng::Trng) {
@@ -190,8 +190,6 @@ pub fn start_con(
         NETWORK_STACK.init(embassy_net::StackResources::<5>::new()),
         seed,
     );
-
-    let wifi_creds = creds.wifi.unwrap();
 
     spawner
         .spawn(connection(
