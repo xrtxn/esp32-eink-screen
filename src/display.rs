@@ -1,5 +1,3 @@
-use core::u32;
-
 #[cfg(target_arch = "xtensa")]
 use alloc::format;
 
@@ -16,6 +14,7 @@ use weact_studio_epd::graphics::Display420BlackWhite;
 
 const START_DISPLAY_HOUR: u8 = 10;
 const DISPLAY_HOURS: u8 = validate_hours(START_DISPLAY_HOUR, 6);
+#[allow(dead_code)]
 pub const DISPLAY_WIDTH: u32 = 300;
 pub const DISPLAY_HEIGHT: u32 = 400;
 const EXTRA_BOTTOM_SPACE: i32 = 15;
@@ -136,8 +135,7 @@ const fn calculate_end_height(end_minute: u16) -> u32 {
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
-    let e = (one_minute * end_minute as f32) as u32 + (text_height / 2) as u32;
-    e
+    (one_minute * end_minute as f32) as u32 + (text_height / 2) as u32
 }
 
 const fn calculate_text_width(char_count: u16, font: MonoFont) -> u16 {
@@ -261,8 +259,6 @@ where
     }
 
     let x = START_POS;
-    let end_x = calculate_text_width(text.chars().count() as u16, EVENT_FONT);
-
     let y =
         calculate_start_height(date_to_mins(start).saturating_sub(START_DISPLAY_HOUR as u16 * 60));
     let mut end_y =
@@ -328,6 +324,7 @@ pub const fn extend_rectangle(rec: &mut Rectangle) {
     rec.top_left.x -= 2;
 }
 
+#[allow(dead_code)]
 pub fn draw_days<D>(display: &mut D, current_day: &jiff::civil::Weekday, count: u8)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
@@ -430,8 +427,9 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     crate::display::add_footer_info(display);
 
     let time = hardware::get_time(rtc);
-    crate::display::draw_sync_time(display, &time);
     crate::display::draw_time_ticker(display, &time);
+    crate::display::draw_base_calendar(display);
+    crate::display::draw_sync_time(display, &time);
     driver.full_update(display).await.unwrap();
 
     crate::hardware::go_to_deep_sleep(rtc);

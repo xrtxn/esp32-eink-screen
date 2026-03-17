@@ -40,7 +40,7 @@
     "command": "nix",
     "args": ["develop", "--command", "cargo", "run", "--release"],
     "cwd": "$ZED_WORKTREE_ROOT",
-    "use_new_terminal": true,
+    "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "tags": ["rust-run"],
   },

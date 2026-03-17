@@ -20,11 +20,11 @@ use embassy_sync::mutex::Mutex;
 use weact_studio_epd::graphics::Display420BlackWhite;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
-use crate::server::{web_task, WEB_TASK_POOL_SIZE};
+use crate::server::{WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
-use portable_atomic::{AtomicU32, AtomicU8};
+use portable_atomic::{AtomicU8, AtomicU32};
 
 use display_interface_spi::SPIInterface;
 use embassy_executor::Spawner;
@@ -233,17 +233,18 @@ async fn run_display_mode(
     driver: &mut EpdDriver,
     config: &NvsConfig,
 ) {
+    let need_initial_sync = INITIAL_NTP_SYNC.load(core::sync::atomic::Ordering::Relaxed) == 0;
     // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
-    if prev_boot_count.is_multiple_of(5)
-        || INITIAL_NTP_SYNC.load(core::sync::atomic::Ordering::Relaxed) == 0
-    {
+    if prev_boot_count.is_multiple_of(5) || need_initial_sync {
         log::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
         let time = networking::get_time(net_stack).await;
         // set_current_time_us expects microseconds
         rtc.set_current_time_us(
             (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
         );
-        INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
+        if need_initial_sync {
+            INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     let caldav = config.caldav.clone().unwrap();

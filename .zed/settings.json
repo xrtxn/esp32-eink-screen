@@ -6,8 +6,8 @@
           "allTargets": false,
           "target": "xtensa-esp32s3-none-elf",
           "buildScripts": {
-            "useRustcWrapper": false
-          }
+            "useRustcWrapper": false,
+          },
         },
         "check": {
           "command": "check",
@@ -19,8 +19,8 @@
             "--command",
             "cargo",
             "check",
-            "--message-format=json"
-          ]
+            "--message-format=json",
+          ],
         },
         "rustfmt": {
           "overrideCommand": [
@@ -29,10 +29,10 @@
             "--command",
             "rustfmt",
             "--edition",
-            "2021"
-          ]
-        }
-      }
-    }
-  }
+            "2024",
+          ],
+        },
+      },
+    },
+  },
 }

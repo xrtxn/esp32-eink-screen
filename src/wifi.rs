@@ -12,7 +12,7 @@ use esp_radio::wifi::{
 };
 use static_cell::StaticCell;
 
-use crate::storage::{NvsConfig, WifiCreds};
+use crate::storage::WifiCreds;
 
 pub const IP_ADDR: [u8; 4] = [192, 168, 0, 1];
 
