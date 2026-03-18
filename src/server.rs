@@ -1,26 +1,35 @@
+#[cfg(target_arch = "xtensa")]
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+#[cfg(target_arch = "xtensa")]
 use embassy_sync::mutex::Mutex;
 
-use esp_storage::FlashStorage;
+#[cfg(target_arch = "xtensa")]
+use crate::storage::FlashStorage;
 use picoserve::AppBuilder;
+#[cfg(target_arch = "xtensa")]
 use static_cell::StaticCell;
 
 use crate::storage;
 
 const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 
+#[cfg(target_arch = "xtensa")]
 static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
 
 pub const WEB_TASK_POOL_SIZE: usize = 2;
 
+#[cfg(target_arch = "xtensa")]
 static TCP_RX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
     [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
+#[cfg(target_arch = "xtensa")]
 static TCP_TX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
     [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
+#[cfg(target_arch = "xtensa")]
 static HTTP_BUFFERS: [StaticCell<[u8; 2048]>; WEB_TASK_POOL_SIZE] =
     [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
 
 pub(crate) struct AppProps {
+    #[cfg(target_arch = "xtensa")]
     pub flash_storage: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
 }
 
@@ -28,12 +37,16 @@ impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
+        #[cfg(target_arch = "xtensa")]
         let flash = self.flash_storage;
 
         picoserve::Router::new()
             .route(
                 "/",
+                #[cfg(target_arch = "xtensa")]
                 picoserve::routing::get(move || config_page_handler(flash)),
+                #[cfg(not(target_arch = "xtensa"))]
+                picoserve::routing::get(move || config_page_handler()),
             )
             .route(
                 "/api/config/wifi",
@@ -42,9 +55,17 @@ impl AppBuilder for AppProps {
                         storage::WifiCreds,
                     >| async move {
                         log::info!("Received config change request: {:?}", resp_wifi);
+                        #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+                        #[cfg(not(target_arch = "xtensa"))]
+                        let mut nvs = storage::read_config().await.unwrap_or_default();
+
                         nvs.wifi = Some(resp_wifi);
+
+                        #[cfg(target_arch = "xtensa")]
                         storage::write_config(flash, nvs).await;
+                        #[cfg(not(target_arch = "xtensa"))]
+                        storage::write_config(nvs).await;
                     },
                 ),
             )
@@ -55,16 +76,25 @@ impl AppBuilder for AppProps {
                         storage::CaldavCreds,
                     >| async move {
                         log::info!("Received config change request: {:?}", resp_caldav);
+                        #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+                        #[cfg(not(target_arch = "xtensa"))]
+                        let mut nvs = storage::read_config().await.unwrap_or_default();
+
                         nvs.caldav = Some(resp_caldav);
+
+                        #[cfg(target_arch = "xtensa")]
                         storage::write_config(flash, nvs).await;
+                        #[cfg(not(target_arch = "xtensa"))]
+                        storage::write_config(nvs).await;
                     },
                 ),
             )
     }
 }
 
-#[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
+#[cfg_attr(not(unix), embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE))]
+#[cfg(target_arch = "xtensa")]
 pub async fn web_task(
     task_id: usize,
     stack: embassy_net::Stack<'static>,
@@ -81,9 +111,22 @@ pub async fn web_task(
         .into_never()
 }
 
+#[cfg(target_arch = "xtensa")]
 async fn config_page_handler(
     _flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
 ) -> impl picoserve::response::IntoResponse {
+    (
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Encoding", "gzip"),
+            ("Content-Length", env!("INDEX_HTML_GZ_LEN")),
+        ],
+        INDEX_HTML_GZ,
+    )
+}
+
+#[cfg(not(target_arch = "xtensa"))]
+async fn config_page_handler() -> impl picoserve::response::IntoResponse {
     (
         [
             ("Content-Type", "text/html; charset=utf-8"),

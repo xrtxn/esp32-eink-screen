@@ -1,18 +1,29 @@
+#[cfg(target_arch = "xtensa")]
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+#[cfg(target_arch = "xtensa")]
 use embassy_sync::mutex::Mutex;
 
+#[cfg(target_arch = "xtensa")]
 use embassy_embedded_hal::adapter::BlockingAsync;
-use esp_storage::FlashStorage;
+#[cfg(target_arch = "xtensa")]
+pub use esp_storage::FlashStorage;
+#[cfg(target_arch = "xtensa")]
 use static_cell::StaticCell;
 
+#[cfg(target_arch = "xtensa")]
 const NVS_STORAGE_START: u32 = 0x9000;
+#[cfg(target_arch = "xtensa")]
 const NVS_STORAGE_SIZE: u32 = 0x6000;
+#[cfg(target_arch = "xtensa")]
 const NVS_RANGE: core::ops::Range<u32> = NVS_STORAGE_START..NVS_STORAGE_START + NVS_STORAGE_SIZE;
 
+#[cfg(target_arch = "xtensa")]
 const CONFIG_KEY: u8 = 1;
 
+#[cfg(target_arch = "xtensa")]
 static FLASH: StaticCell<Mutex<NoopRawMutex, FlashStorage<'static>>> = StaticCell::new();
 
+#[cfg(target_arch = "xtensa")]
 pub(crate) fn init_flash(
     flash: FlashStorage<'static>,
 ) -> &'static Mutex<NoopRawMutex, FlashStorage<'static>> {
@@ -30,8 +41,6 @@ impl NvsConfig {
         Self { wifi, caldav: None }
     }
 }
-
-impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct WifiCreds {
@@ -55,6 +64,10 @@ pub struct CaldavCreds {
     pub password: heapless::String<32>,
 }
 
+#[cfg(target_arch = "xtensa")]
+impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
+
+#[cfg(target_arch = "xtensa")]
 pub(crate) async fn read_config(
     flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
 ) -> Option<NvsConfig> {
@@ -79,6 +92,12 @@ pub(crate) async fn read_config(
     nvs_config
 }
 
+#[cfg(not(target_arch = "xtensa"))]
+pub(crate) async fn read_config() -> Option<NvsConfig> {
+    Some(NvsConfig::default())
+}
+
+#[cfg(target_arch = "xtensa")]
 pub(crate) async fn write_config(
     flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
     config: NvsConfig,
@@ -100,4 +119,9 @@ pub(crate) async fn write_config(
         .unwrap();
 
     log::info!("Config written to flash");
+}
+
+#[cfg(not(target_arch = "xtensa"))]
+pub(crate) async fn write_config(config: NvsConfig) {
+    log::info!("Mock writing config: {:?}", config);
 }

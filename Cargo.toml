@@ -2,7 +2,8 @@
 resolver = "3"
 members = [
     "vcal-parser",
-    "display-simulator"
+    "display-simulator",
+    "web-test"
 ]
 
 [package]
