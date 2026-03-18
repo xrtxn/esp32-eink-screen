@@ -2,6 +2,14 @@
   "lsp": {
     "rust-analyzer": {
       "initialization_options": {
+        "linkedProjects": [
+          "./Cargo.toml",
+          "./display-simulator/Cargo.toml",
+          "./vcal-parser/Cargo.toml",
+        ],
+        "diagnostics": {
+          "disabled": ["E0583"],
+        },
         "cargo": {
           "allTargets": false,
           "target": "xtensa-esp32s3-none-elf",
