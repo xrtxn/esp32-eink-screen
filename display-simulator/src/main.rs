@@ -1,6 +1,7 @@
+use crate::display::DISPLAY_HOURS;
 use embedded_graphics::prelude::*;
 use embedded_graphics_simulator::SimulatorDisplay;
-use jiff::{Zoned, civil::DateTime, tz::TimeZone};
+use jiff::{Timestamp, Zoned, civil::DateTime, tz::TimeZone};
 use weact_studio_epd::Color;
 
 #[path = "../../src/display.rs"]
@@ -28,7 +29,22 @@ fn main() {
         Color::White,
     );
 
-    display::draw_time_row_header(&mut display);
+    let now = Zoned::now()
+        .with()
+        .hour(21)
+        .minute(32)
+        .second(1)
+        .subsec_nanosecond(31) // Zeroes out the fractional seconds
+        .build()
+        .unwrap();
+
+    let start_display_hour: u8 = now
+        .hour()
+        .clamp(0, 24 - DISPLAY_HOURS as i8)
+        .try_into()
+        .unwrap();
+
+    display::draw_time_row_header(&mut display, start_display_hour);
 
     let events: Vec<(Zoned, Zoned, &str)> = vec![
         sample_event(
@@ -58,14 +74,13 @@ fn main() {
         ),
     ];
 
-    let now = jiff::Zoned::now();
-    display::draw_time_ticker(&mut display, &now);
-    display::draw_base_calendar(&mut display);
+    display::draw_time_ticker(&mut display, &now, start_display_hour);
+    display::draw_base_calendar(&mut display, start_display_hour);
     display::draw_sync_time(&mut display, &now);
     //display::draw_days(&mut display, &now.weekday(), 3);
 
     for (start, end, title) in &events {
-        display::draw_event(&mut display, start, end, title);
+        display::draw_event(&mut display, start, end, title, start_display_hour);
     }
 
     display::add_footer_info(&mut display);

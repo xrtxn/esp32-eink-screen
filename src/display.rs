@@ -12,8 +12,7 @@ use weact_studio_epd::Color as EpdColor;
 #[cfg(target_arch = "xtensa")]
 use weact_studio_epd::graphics::Display420BlackWhite;
 
-const START_DISPLAY_HOUR: u8 = 10;
-const DISPLAY_HOURS: u8 = validate_hours(START_DISPLAY_HOUR, 6);
+pub const DISPLAY_HOURS: u8 = 18;
 #[allow(dead_code)]
 pub const DISPLAY_WIDTH: u32 = 300;
 pub const DISPLAY_HEIGHT: u32 = 400;
@@ -45,11 +44,6 @@ const fn calculate_row_padding(start_hour: u8, end_hour: u8) -> i32 {
     let total_text_size = text_height * item_count;
     let remaining_space = DISPLAY_HEIGHT as i32 - EXTRA_BOTTOM_SPACE - total_text_size;
     remaining_space / (item_count)
-}
-
-const fn validate_hours(start: u8, duration: u8) -> u8 {
-    assert!(start + duration <= 24, "Display hours exceed 24-hour limit");
-    duration
 }
 
 pub(crate) fn add_footer_info<D>(display: &mut D)
@@ -89,7 +83,7 @@ where
     etext.draw(display).unwrap();
 }
 
-pub(crate) fn draw_time_row_header<D>(display: &mut D)
+pub(crate) fn draw_time_row_header<D>(display: &mut D, start_display_hour: u8)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
@@ -99,7 +93,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for hour in START_DISPLAY_HOUR..=START_DISPLAY_HOUR + DISPLAY_HOURS {
+    for hour in start_display_hour..=start_display_hour + DISPLAY_HOURS {
         let fmt_hour: heapless::String<5> = hformat!("{:0>2}:00", hour).unwrap();
         Text::with_baseline(
             &fmt_hour,
@@ -110,17 +104,17 @@ where
         .draw(display)
         .unwrap();
         let row_padding =
-            calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
+            calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
         exceeded_height += text_height + row_padding;
     }
     // height is at max
 }
 
 /// Calculates the starting position of the event based on the screen size
-fn calculate_start_height(start_minute: u16) -> u32 {
+fn calculate_start_height(start_minute: u16, start_display_hour: u8) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
+    let row_padding = calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
@@ -128,10 +122,10 @@ fn calculate_start_height(start_minute: u16) -> u32 {
 }
 
 /// Calculates the ending position of the event based on the screen size
-const fn calculate_end_height(end_minute: u16) -> u32 {
+fn calculate_end_height(end_minute: u16, start_display_hour: u8) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let row_padding = calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
+    let row_padding = calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
@@ -181,7 +175,7 @@ where
     etext.draw(display).unwrap();
 }
 
-pub fn draw_base_calendar<D>(display: &mut D)
+pub fn draw_base_calendar<D>(display: &mut D, start_display_hour: u8)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
@@ -192,7 +186,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for _ in START_DISPLAY_HOUR..=START_DISPLAY_HOUR + DISPLAY_HOURS {
+    for _ in start_display_hour..=start_display_hour + DISPLAY_HOURS {
         let start_pos = position + Point::new(text_width * 6, exceeded_height + text_height / 2);
         let finish_pos = position
             + Point::new(
@@ -205,13 +199,13 @@ where
             .draw(display)
             .unwrap();
         let row_padding =
-            calculate_row_padding(START_DISPLAY_HOUR, START_DISPLAY_HOUR + DISPLAY_HOURS);
+            calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
         exceeded_height += text_height + row_padding;
     }
     // height is at max
 }
 
-pub(crate) fn draw_time_ticker<D>(display: &mut D, time: &jiff::Zoned)
+pub(crate) fn draw_time_ticker<D>(display: &mut D, time: &jiff::Zoned, start_display_hour: u8)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
@@ -219,19 +213,22 @@ where
     let x = START_POS;
     let end_x = START_POS + 40;
 
-    if time.hour() < START_DISPLAY_HOUR as i8
-        || time.hour() > (START_DISPLAY_HOUR + DISPLAY_HOURS) as i8
+    if time.hour() < start_display_hour as i8
+        || time.hour() > (start_display_hour + DISPLAY_HOURS) as i8
     {
         log::warn!(
             "Current time {} is out of display bounds ({}-{}), skipping time ticker",
             time,
-            START_DISPLAY_HOUR,
-            START_DISPLAY_HOUR + DISPLAY_HOURS
+            start_display_hour,
+            start_display_hour + DISPLAY_HOURS
         );
         return;
     }
 
-    let y = calculate_start_height(date_to_mins(time) - START_DISPLAY_HOUR as u16 * 60);
+    let y = calculate_start_height(
+        date_to_mins(time) - start_display_hour as u16 * 60,
+        start_display_hour,
+    );
 
     let end_y = y;
 
@@ -241,13 +238,18 @@ where
         .unwrap();
 }
 
-pub(crate) fn draw_event<D>(display: &mut D, start: &jiff::Zoned, end: &jiff::Zoned, text: &str)
-where
+pub(crate) fn draw_event<D>(
+    display: &mut D,
+    start: &jiff::Zoned,
+    end: &jiff::Zoned,
+    text: &str,
+    start_display_hour: u8,
+) where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    if end.hour() < START_DISPLAY_HOUR as i8
-        || start.hour() > (START_DISPLAY_HOUR + DISPLAY_HOURS) as i8
+    if end.hour() < start_display_hour as i8
+        || start.hour() > (start_display_hour + DISPLAY_HOURS) as i8
     {
         log::warn!(
             "Event '{}' is out of display bounds ({}-{}), skipping",
@@ -259,11 +261,18 @@ where
     }
 
     let x = START_POS;
-    let y =
-        calculate_start_height(date_to_mins(start).saturating_sub(START_DISPLAY_HOUR as u16 * 60));
-    let mut end_y =
-        calculate_end_height(date_to_mins(end).saturating_sub(START_DISPLAY_HOUR as u16 * 60))
-            .clamp(0, calculate_end_height(DISPLAY_HOURS as u16 * 60));
+    let y = calculate_start_height(
+        date_to_mins(start).saturating_sub(start_display_hour as u16 * 60),
+        start_display_hour,
+    );
+    let mut end_y = calculate_end_height(
+        date_to_mins(end).saturating_sub(start_display_hour as u16 * 60),
+        start_display_hour,
+    )
+    .clamp(
+        0,
+        calculate_end_height(DISPLAY_HOURS as u16 * 60, start_display_hour),
+    );
 
     let available_height = end_y - y;
 
@@ -409,7 +418,12 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
     RST: EhalOutputPin,
     DELAY: DelayNs,
 {
-    crate::display::draw_time_row_header(display);
+    let time = hardware::get_time(rtc);
+    let start_display_hour = time.hour() as u8;
+
+    let start_display_hour = start_display_hour.clamp(0, 23 - DISPLAY_HOURS);
+
+    crate::display::draw_time_row_header(display, start_display_hour);
     let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
     for event in events {
         for eevent in event.events {
@@ -420,15 +434,15 @@ pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
                 &start_dt,
                 &end_dt,
                 eevent.summary.unwrap_or("No summary"),
+                start_display_hour,
             );
         }
     }
     #[cfg(debug_assertions)]
     crate::display::add_footer_info(display);
 
-    let time = hardware::get_time(rtc);
-    crate::display::draw_time_ticker(display, &time);
-    crate::display::draw_base_calendar(display);
+    crate::display::draw_time_ticker(display, &time, start_display_hour);
+    crate::display::draw_base_calendar(display, start_display_hour);
     crate::display::draw_sync_time(display, &time);
     driver.full_update(display).await.unwrap();
 
