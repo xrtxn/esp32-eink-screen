@@ -2,11 +2,16 @@
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
     pub caldav: Option<CaldavCreds>,
+    pub display: Option<DisplayConfig>,
 }
 
 impl NvsConfig {
     pub fn new(wifi: Option<WifiCreds>) -> Self {
-        Self { wifi, caldav: None }
+        Self {
+            wifi,
+            caldav: None,
+            display: None,
+        }
     }
 }
 
@@ -30,6 +35,19 @@ pub struct CaldavCreds {
     pub url: heapless::String<128>,
     pub username: heapless::String<32>,
     pub password: heapless::String<32>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct DisplayConfig {
+    pub displayed_hours: u8,
+}
+
+impl Default for DisplayConfig {
+    fn default() -> Self {
+        Self {
+            displayed_hours: 18,
+        }
+    }
 }
 
 #[cfg(target_arch = "xtensa")]

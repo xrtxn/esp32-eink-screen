@@ -3,6 +3,7 @@ use picoserve::AppBuilder;
 use crate::storage;
 
 const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
+const DISPLAY_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/config.html.gz"));
 
 pub const WEB_TASK_POOL_SIZE: usize = 2;
 
@@ -70,6 +71,29 @@ impl AppBuilder for AppProps {
                     },
                 ),
             )
+            .route(
+                "/api/config/display",
+                picoserve::routing::post(
+                    move |picoserve::extract::Json(resp_caldav): picoserve::extract::Json<
+                        storage::DisplayConfig,
+                    >| async move {
+                        log::info!("Received config change request: {:?}", resp_caldav);
+
+                        #[cfg(target_arch = "xtensa")]
+                        let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+                        #[cfg(not(target_arch = "xtensa"))]
+                        let mut nvs = storage::read_config().await.unwrap_or_default();
+
+                        nvs.display = Some(resp_caldav);
+
+                        #[cfg(target_arch = "xtensa")]
+                        storage::write_config(flash, nvs).await;
+                        #[cfg(not(target_arch = "xtensa"))]
+                        storage::write_config(nvs).await;
+                    },
+                ),
+            )
+            .route("/display_config", picoserve::routing::get(move || display_config_page_handler()))
     }
 }
 
@@ -81,6 +105,17 @@ async fn config_page_handler() -> impl picoserve::response::IntoResponse {
             ("Content-Length", env!("INDEX_HTML_GZ_LEN")),
         ],
         INDEX_HTML_GZ,
+    )
+}
+
+async fn display_config_page_handler() -> impl picoserve::response::IntoResponse {
+    (
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Encoding", "gzip"),
+            ("Content-Length", env!("DISPLAY_HTML_GZ_LEN")),
+        ],
+        DISPLAY_HTML_GZ,
     )
 }
 

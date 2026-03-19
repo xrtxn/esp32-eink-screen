@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Configuration</title>
+        <link rel="stylesheet" href="static/pico.min.css" />
+
+        <style>
+            /* CSS_PLACEHOLDER */
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <nav>
+                <ul>
+                    <li><strong>Display settings</strong></li>
+                </ul>
+                <ul>
+                    <li>
+                        <a href="/" class="contrast">Credentials</a>
+                    </li>
+                    <li>
+                        <a href="/display_config" class="contrast">Calendar</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+        <div class="container" id="display-config">
+            <label for="display-hours-range">
+                Displayed hours: <span id="hours-value">16</span>
+            </label>
+
+            <input
+                id="display-hours-range"
+                type="range"
+                value="16"
+                min="1"
+                max="24"
+            />
+            <script>
+                const rangeInput = document.querySelector(
+                    "#display-hours-range",
+                );
+                const valueDisplay = document.querySelector("#hours-value");
+
+                // Create a reusable function to update the UI
+                const updateDisplay = () => {
+                    valueDisplay.textContent = rangeInput.value;
+                };
+
+                // Listen for input changes
+                rangeInput.addEventListener("input", updateDisplay);
+
+                // Initialize the display on page load
+                updateDisplay();
+            </script>
+        </div>
+
+        <div class="container">
+            <h3>Placeholder select your display calendars</h3>
+            <details class="dropdown">
+                <summary>Please select your calendars...</summary>
+                <ul>
+                    <li>
+                        <label>
+                            <input type="checkbox" name="work" />
+                            Work
+                        </label>
+                    </li>
+                    <li>
+                        <label>
+                            <input type="checkbox" name="school" />
+                            School
+                        </label>
+                    </li>
+                    <li>
+                        <label>
+                            <input type="checkbox" name="f1" />
+                            F1
+                        </label>
+                    </li>
+                </ul>
+            </details>
+        </div>
+    </body>
+</html>
