@@ -1,35 +1,3 @@
-#[cfg(target_arch = "xtensa")]
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-#[cfg(target_arch = "xtensa")]
-use embassy_sync::mutex::Mutex;
-
-#[cfg(target_arch = "xtensa")]
-use embassy_embedded_hal::adapter::BlockingAsync;
-#[cfg(target_arch = "xtensa")]
-pub use esp_storage::FlashStorage;
-#[cfg(target_arch = "xtensa")]
-use static_cell::StaticCell;
-
-#[cfg(target_arch = "xtensa")]
-const NVS_STORAGE_START: u32 = 0x9000;
-#[cfg(target_arch = "xtensa")]
-const NVS_STORAGE_SIZE: u32 = 0x6000;
-#[cfg(target_arch = "xtensa")]
-const NVS_RANGE: core::ops::Range<u32> = NVS_STORAGE_START..NVS_STORAGE_START + NVS_STORAGE_SIZE;
-
-#[cfg(target_arch = "xtensa")]
-const CONFIG_KEY: u8 = 1;
-
-#[cfg(target_arch = "xtensa")]
-static FLASH: StaticCell<Mutex<NoopRawMutex, FlashStorage<'static>>> = StaticCell::new();
-
-#[cfg(target_arch = "xtensa")]
-pub(crate) fn init_flash(
-    flash: FlashStorage<'static>,
-) -> &'static Mutex<NoopRawMutex, FlashStorage<'static>> {
-    FLASH.init(Mutex::new(flash))
-}
-
 #[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
@@ -65,63 +33,94 @@ pub struct CaldavCreds {
 }
 
 #[cfg(target_arch = "xtensa")]
-impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
+pub use xtensa::*;
+
+#[cfg(not(target_arch = "xtensa"))]
+pub use not_xtensa::*;
 
 #[cfg(target_arch = "xtensa")]
-pub(crate) async fn read_config(
-    flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
-) -> Option<NvsConfig> {
-    let mut borrow = flash_cell.lock().await;
-    let mut data_buffer = [0u8; 256];
+mod xtensa {
+    use super::*;
+    use embassy_embedded_hal::adapter::BlockingAsync;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use embassy_sync::mutex::Mutex;
+    pub use esp_storage::FlashStorage;
+    use static_cell::StaticCell;
 
-    let async_flash = BlockingAsync::new(&mut *borrow);
+    const NVS_STORAGE_START: u32 = 0x9000;
+    const NVS_STORAGE_SIZE: u32 = 0x6000;
+    const NVS_RANGE: core::ops::Range<u32> =
+        NVS_STORAGE_START..NVS_STORAGE_START + NVS_STORAGE_SIZE;
 
-    let mut ms = sequential_storage::map::MapStorage::<u8, _, _>::new(
-        async_flash,
-        const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
-        sequential_storage::cache::NoCache::new(),
-    );
+    const CONFIG_KEY: u8 = 1;
 
-    let nvs_config = ms
-        .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
-        .await
-        .ok()
-        .flatten();
+    static FLASH: StaticCell<Mutex<NoopRawMutex, FlashStorage<'static>>> = StaticCell::new();
 
-    log::info!("Read config: {:?}", nvs_config);
-    nvs_config
+    pub(crate) fn init_flash(
+        flash: FlashStorage<'static>,
+    ) -> &'static Mutex<NoopRawMutex, FlashStorage<'static>> {
+        FLASH.init(Mutex::new(flash))
+    }
+
+    impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
+
+    pub(crate) async fn read_config(
+        flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
+    ) -> Option<NvsConfig> {
+        let mut borrow = flash_cell.lock().await;
+        let mut data_buffer = [0u8; 256];
+
+        let async_flash = BlockingAsync::new(&mut *borrow);
+
+        let mut ms = sequential_storage::map::MapStorage::<u8, _, _>::new(
+            async_flash,
+            const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
+            sequential_storage::cache::NoCache::new(),
+        );
+
+        let nvs_config = ms
+            .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
+            .await
+            .ok()
+            .flatten();
+
+        log::info!("Read config: {:?}", nvs_config);
+        nvs_config
+    }
+
+    pub(crate) async fn write_config(
+        flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
+        config: NvsConfig,
+    ) {
+        let mut borrow = flash_cell.lock().await;
+
+        let async_flash = BlockingAsync::new(&mut *borrow);
+
+        let mut data_buffer = [0u8; 512];
+
+        let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
+            async_flash,
+            const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
+            sequential_storage::cache::NoCache::new(),
+        );
+
+        l.store_item(&mut data_buffer, &CONFIG_KEY, &config)
+            .await
+            .unwrap();
+
+        log::info!("Config written to flash");
+    }
 }
 
 #[cfg(not(target_arch = "xtensa"))]
-pub(crate) async fn read_config() -> Option<NvsConfig> {
-    Some(NvsConfig::default())
-}
+mod not_xtensa {
+    use super::*;
 
-#[cfg(target_arch = "xtensa")]
-pub(crate) async fn write_config(
-    flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
-    config: NvsConfig,
-) {
-    let mut borrow = flash_cell.lock().await;
+    pub async fn read_config() -> Option<NvsConfig> {
+        Some(NvsConfig::default())
+    }
 
-    let async_flash = BlockingAsync::new(&mut *borrow);
-
-    let mut data_buffer = [0u8; 512];
-
-    let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
-        async_flash,
-        const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
-        sequential_storage::cache::NoCache::new(),
-    );
-
-    l.store_item(&mut data_buffer, &CONFIG_KEY, &config)
-        .await
-        .unwrap();
-
-    log::info!("Config written to flash");
-}
-
-#[cfg(not(target_arch = "xtensa"))]
-pub(crate) async fn write_config(config: NvsConfig) {
-    log::info!("Mock writing config: {:?}", config);
+    pub async fn write_config(config: NvsConfig) {
+        log::info!("Mock writing config: {:?}", config);
+    }
 }

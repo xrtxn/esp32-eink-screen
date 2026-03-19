@@ -45,6 +45,8 @@
 
               pkgs.cargo-bloat
               pkgs.SDL2
+
+              pkgs.bacon
             ];
 
             shellHook = ''

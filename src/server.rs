@@ -1,36 +1,20 @@
-#[cfg(target_arch = "xtensa")]
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-#[cfg(target_arch = "xtensa")]
-use embassy_sync::mutex::Mutex;
-
-#[cfg(target_arch = "xtensa")]
-use crate::storage::FlashStorage;
 use picoserve::AppBuilder;
-#[cfg(target_arch = "xtensa")]
-use static_cell::StaticCell;
 
 use crate::storage;
 
 const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 
-#[cfg(target_arch = "xtensa")]
-static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
-
 pub const WEB_TASK_POOL_SIZE: usize = 2;
 
 #[cfg(target_arch = "xtensa")]
-static TCP_RX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
-    [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
-#[cfg(target_arch = "xtensa")]
-static TCP_TX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
-    [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
-#[cfg(target_arch = "xtensa")]
-static HTTP_BUFFERS: [StaticCell<[u8; 2048]>; WEB_TASK_POOL_SIZE] =
-    [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
+pub use xtensa::*;
 
-pub(crate) struct AppProps {
+pub struct AppProps {
     #[cfg(target_arch = "xtensa")]
-    pub flash_storage: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
+    pub flash_storage: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        storage::FlashStorage<'static>,
+    >,
 }
 
 impl AppBuilder for AppProps {
@@ -41,13 +25,7 @@ impl AppBuilder for AppProps {
         let flash = self.flash_storage;
 
         picoserve::Router::new()
-            .route(
-                "/",
-                #[cfg(target_arch = "xtensa")]
-                picoserve::routing::get(move || config_page_handler(flash)),
-                #[cfg(not(target_arch = "xtensa"))]
-                picoserve::routing::get(move || config_page_handler()),
-            )
+            .route("/", picoserve::routing::get(move || config_page_handler()))
             .route(
                 "/api/config/wifi",
                 picoserve::routing::post(
@@ -55,6 +33,7 @@ impl AppBuilder for AppProps {
                         storage::WifiCreds,
                     >| async move {
                         log::info!("Received config change request: {:?}", resp_wifi);
+
                         #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
                         #[cfg(not(target_arch = "xtensa"))]
@@ -76,6 +55,7 @@ impl AppBuilder for AppProps {
                         storage::CaldavCreds,
                     >| async move {
                         log::info!("Received config change request: {:?}", resp_caldav);
+
                         #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
                         #[cfg(not(target_arch = "xtensa"))]
@@ -93,39 +73,6 @@ impl AppBuilder for AppProps {
     }
 }
 
-#[cfg_attr(not(unix), embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE))]
-#[cfg(target_arch = "xtensa")]
-pub async fn web_task(
-    task_id: usize,
-    stack: embassy_net::Stack<'static>,
-    app: &'static picoserve::AppRouter<AppProps>,
-) -> ! {
-    let port = 80;
-    let tcp_rx_buffer = TCP_RX_BUFFERS[task_id].init([0; 1024]);
-    let tcp_tx_buffer = TCP_TX_BUFFERS[task_id].init([0; 1024]);
-    let http_buffer = HTTP_BUFFERS[task_id].init([0; 2048]);
-
-    picoserve::Server::new(app, &CONFIG, http_buffer)
-        .listen_and_serve(task_id, stack, port, tcp_rx_buffer, tcp_tx_buffer)
-        .await
-        .into_never()
-}
-
-#[cfg(target_arch = "xtensa")]
-async fn config_page_handler(
-    _flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
-) -> impl picoserve::response::IntoResponse {
-    (
-        [
-            ("Content-Type", "text/html; charset=utf-8"),
-            ("Content-Encoding", "gzip"),
-            ("Content-Length", env!("INDEX_HTML_GZ_LEN")),
-        ],
-        INDEX_HTML_GZ,
-    )
-}
-
-#[cfg(not(target_arch = "xtensa"))]
 async fn config_page_handler() -> impl picoserve::response::IntoResponse {
     (
         [
@@ -135,4 +82,36 @@ async fn config_page_handler() -> impl picoserve::response::IntoResponse {
         ],
         INDEX_HTML_GZ,
     )
+}
+
+#[cfg(target_arch = "xtensa")]
+mod xtensa {
+    use super::*;
+    use static_cell::StaticCell;
+
+    static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
+
+    static TCP_RX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
+        [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
+    static TCP_TX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
+        [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
+    static HTTP_BUFFERS: [StaticCell<[u8; 2048]>; WEB_TASK_POOL_SIZE] =
+        [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
+
+    #[cfg_attr(target_arch = "xtensa", embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE))]
+    pub async fn web_task(
+        task_id: usize,
+        stack: embassy_net::Stack<'static>,
+        app: &'static picoserve::AppRouter<AppProps>,
+    ) -> ! {
+        let port = 80;
+        let tcp_rx_buffer = TCP_RX_BUFFERS[task_id].init([0; 1024]);
+        let tcp_tx_buffer = TCP_TX_BUFFERS[task_id].init([0; 1024]);
+        let http_buffer = HTTP_BUFFERS[task_id].init([0; 2048]);
+
+        picoserve::Server::new(app, &CONFIG, http_buffer)
+            .listen_and_serve(task_id, stack, port, tcp_rx_buffer, tcp_tx_buffer)
+            .await
+            .into_never()
+    }
 }

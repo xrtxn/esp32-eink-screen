@@ -1,6 +1,3 @@
-#[cfg(target_arch = "xtensa")]
-use alloc::format;
-
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
 use embedded_graphics::prelude::{Drawable, Primitive};
@@ -9,8 +6,6 @@ use embedded_graphics::text::Text;
 use heapless::format as hformat;
 use log::info;
 use weact_studio_epd::Color as EpdColor;
-#[cfg(target_arch = "xtensa")]
-use weact_studio_epd::graphics::Display420BlackWhite;
 
 pub const DISPLAY_HOURS: u8 = 18;
 #[allow(dead_code)]
@@ -285,7 +280,8 @@ pub(crate) fn draw_event<D>(
         end_y = y + single_line_height;
     }
 
-    let time_str = format!("{}-{}", start.strftime("%H:%M"), end.strftime("%H:%M"));
+    let time_str: heapless::String<15> =
+        hformat!("{}-{}", start.strftime("%H:%M"), end.strftime("%H:%M")).unwrap();
 
     let time_text = Text::with_baseline(
         &time_str,
@@ -393,60 +389,73 @@ where
 }
 
 #[cfg(target_arch = "xtensa")]
-use display_interface::AsyncWriteOnlyDataCommand;
-#[cfg(target_arch = "xtensa")]
-use embedded_hal::digital::OutputPin as EhalOutputPin;
-#[cfg(target_arch = "xtensa")]
-use embedded_hal_async::{delay::DelayNs, digital::Wait};
-#[cfg(target_arch = "xtensa")]
-use esp_hal::rtc_cntl::Rtc;
-#[cfg(target_arch = "xtensa")]
-use weact_studio_epd::WeActStudio420BlackWhiteDriver;
+pub use xtensa::*;
+
+#[cfg(not(target_arch = "xtensa"))]
+pub use not_xtensa::*;
 
 #[cfg(target_arch = "xtensa")]
-use crate::hardware;
+pub mod xtensa {
+    use super::*;
+    use display_interface::AsyncWriteOnlyDataCommand;
+    use embedded_hal::digital::OutputPin as EhalOutputPin;
+    use embedded_hal_async::{delay::DelayNs, digital::Wait};
+    use esp_hal::rtc_cntl::Rtc;
+    use weact_studio_epd::WeActStudio420BlackWhiteDriver;
+    pub use weact_studio_epd::graphics::Display420BlackWhite;
 
-#[cfg(target_arch = "xtensa")]
-pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
-    display: &mut Display420BlackWhite,
-    driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
-    events: crate::networking::VcalsType<'_>,
-    rtc: &mut Rtc<'_>,
-) where
-    DI: AsyncWriteOnlyDataCommand,
-    BSY: embedded_hal::digital::InputPin + Wait,
-    RST: EhalOutputPin,
-    DELAY: DelayNs,
-{
-    let time = hardware::get_time(rtc);
-    let start_display_hour = time.hour() as u8;
+    use crate::hardware;
 
-    let start_display_hour = start_display_hour.clamp(0, 23 - DISPLAY_HOURS);
+    pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
+        display: &mut Display420BlackWhite,
+        driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
+        events: crate::networking::VcalsType<'_>,
+        rtc: &mut Rtc<'_>,
+    ) where
+        DI: AsyncWriteOnlyDataCommand,
+        BSY: embedded_hal::digital::InputPin + Wait,
+        RST: EhalOutputPin,
+        DELAY: DelayNs,
+    {
+        let time = hardware::get_time(rtc);
+        let start_display_hour = time.hour() as u8;
 
-    crate::display::draw_time_row_header(display, start_display_hour);
-    let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
-    for event in events {
-        for eevent in event.events {
-            let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());
-            let end_dt = eevent.dtend.unwrap().to_zoned(tz.clone());
-            draw_event(
-                display,
-                &start_dt,
-                &end_dt,
-                eevent.summary.unwrap_or("No summary"),
-                start_display_hour,
-            );
+        let start_display_hour = start_display_hour.clamp(0, 23 - DISPLAY_HOURS);
+
+        crate::display::draw_time_row_header(display, start_display_hour);
+        let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
+        for event in events {
+            for eevent in event.events {
+                let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());
+                let end_dt = eevent.dtend.unwrap().to_zoned(tz.clone());
+                draw_event(
+                    display,
+                    &start_dt,
+                    &end_dt,
+                    eevent.summary.unwrap_or("No summary"),
+                    start_display_hour,
+                );
+            }
         }
+        #[cfg(debug_assertions)]
+        crate::display::add_footer_info(display);
+
+        crate::display::draw_time_ticker(display, &time, start_display_hour);
+        crate::display::draw_base_calendar(display, start_display_hour);
+        crate::display::draw_sync_time(display, &time);
+        driver.full_update(display).await.unwrap();
+
+        crate::hardware::go_to_deep_sleep(rtc);
     }
-    #[cfg(debug_assertions)]
-    crate::display::add_footer_info(display);
+}
 
-    crate::display::draw_time_ticker(display, &time, start_display_hour);
-    crate::display::draw_base_calendar(display, start_display_hour);
-    crate::display::draw_sync_time(display, &time);
-    driver.full_update(display).await.unwrap();
+#[cfg(not(target_arch = "xtensa"))]
+pub mod not_xtensa {
+    use super::*;
 
-    crate::hardware::go_to_deep_sleep(rtc);
+    pub(crate) async fn write_to_screen() {
+        log::info!("Mock writing to screen");
+    }
 }
 
 pub fn date_to_mins(dt: &jiff::Zoned) -> u16 {
