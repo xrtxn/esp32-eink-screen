@@ -20,7 +20,7 @@ use embassy_sync::mutex::Mutex;
 use weact_studio_epd::graphics::Display420BlackWhite;
 
 use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
-use crate::server::{WEB_TASK_POOL_SIZE, web_task};
+use crate::server::{NetworkStatus, WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
 use picoserve::AppBuilder;
@@ -45,14 +45,20 @@ use crate::hardware::go_to_deep_sleep;
 
 extern crate alloc;
 
+const NETWORK_FAIL_LIMIT: u8 = 3;
+
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 static DISPLAY_SLEEP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
 
+/// This is a boolean value to whether the initial NTP sync occurred
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static INITIAL_NTP_SYNC: AtomicU8 = AtomicU8::new(0);
+
+#[esp_hal::ram(unstable(rtc_fast, persistent))]
+pub static NETWORK_FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
 
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
@@ -132,12 +138,9 @@ async fn main(spawner: Spawner) {
     let button = Input::new(button, btn_config);
 
     spawner.must_spawn(hardware::button_task(button));
-    let mut creds = None;
-
-    let (net_stack, trng) = if boot_type == BootType::Display {
-        let stored_config = storage::read_config(flash).await;
-
-        let config = match stored_config {
+    let stored_config = storage::read_config(flash).await;
+    let (net_stack, trng, ncreds, network_status) = if boot_type == BootType::Display {
+        let config = match stored_config.clone() {
             Some(config) => config,
             _ => {
                 #[cfg(debug_assertions)]
@@ -160,21 +163,69 @@ async fn main(spawner: Spawner) {
         }
 
         let wifi_creds = config.wifi.clone().unwrap();
-        creds = Some(config);
+        let ncreds = Some(config);
 
-        wifi::start_con(spawner, w, wifi_creds, peripherals.RNG, peripherals.ADC1)
+        let (net_stack, trng) =
+            wifi::start_con(spawner, w, wifi_creds, peripherals.RNG, peripherals.ADC1);
+        (net_stack, trng, ncreds, NetworkStatus::Network)
     } else {
-        wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1)
+        let ncreds = stored_config.clone();
+
+        let (net_stack, trng, network_status) = match stored_config.clone() {
+            Some(config) => match config.wifi {
+                Some(creds) => {
+                    let (net_stack, trng) =
+                        wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1);
+                    (net_stack, trng, NetworkStatus::Network)
+                }
+                None => {
+                    let (net_stack, trng) =
+                        wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
+                    (net_stack, trng, NetworkStatus::AccessPoint)
+                }
+            },
+            None => {
+                let (net_stack, trng) =
+                    wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
+                (net_stack, trng, NetworkStatus::AccessPoint)
+            }
+        };
+        (net_stack, trng, ncreds, network_status)
     };
 
     {
-        let to = embassy_time::with_timeout(
-            embassy_time::Duration::from_secs(30),
-            net_stack.wait_config_up(),
-        )
-        .await;
-        if to.is_err() {
-            go_to_deep_sleep(&mut rtc)
+        let timeout = if boot_type == BootType::Display {
+            embassy_time::Duration::from_secs(20)
+        } else {
+            embassy_time::Duration::from_secs(30)
+        };
+
+        let to = embassy_time::with_timeout(timeout, net_stack.wait_config_up()).await;
+        
+        match to {
+            Ok(_) => {
+                if boot_type == BootType::Display {
+                    NETWORK_FAIL_COUNT.store(0, core::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            Err(_) => {
+                let old_count = NETWORK_FAIL_COUNT.load(core::sync::atomic::Ordering::Relaxed);
+                
+                let should_reset = match boot_type {
+                    BootType::Display if old_count <= NETWORK_FAIL_LIMIT => {
+                        go_to_deep_sleep(&mut rtc)
+                    }
+                    BootType::Display => true,
+                    _ => network_status == NetworkStatus::Network,
+                };
+
+                if should_reset {
+                    let mut config = stored_config.unwrap();
+                    config.wifi = None;
+                    storage::write_config(flash, config).await;
+                    esp_hal::system::software_reset();
+                }
+            }
         }
     }
 
@@ -203,22 +254,34 @@ async fn main(spawner: Spawner) {
                 trng,
                 &mut display,
                 &mut driver,
-                creds.as_ref().unwrap(),
+                ncreds.as_ref().unwrap(),
             )
             .await;
         }
         BootType::Config => {
-            let text = alloc::format!(
-                "Wifi: {}\nPassword: {}\nIp: {}",
-                env!("AP_SSID"),
-                env!("AP_PASS"),
-                ip_config.address.address()
-            );
+            let text;
+            if network_status == NetworkStatus::Network {
+                text = alloc::format!(
+                    "Connected to Wi-Fi!\nSSID: {}\nIP: {}\n",
+                    ncreds.as_ref().unwrap().wifi.as_ref().unwrap().ssid,
+                    ip_config.address.address()
+                );
+            } else {
+                text = alloc::format!(
+                    "Access point created!\nSSID: {}\nPassword: {}\nIp: {}",
+                    env!("AP_SSID"),
+                    env!("AP_PASS"),
+                    ip_config.address.address()
+                );
+            }
 
-            join(run_config_mode(spawner, net_stack, flash), async {
-                display::draw_config(&mut display, text.as_str()).await;
-                driver.full_update(&display).await.unwrap();
-            })
+            join(
+                run_config_mode(spawner, net_stack, flash, network_status),
+                async {
+                    display::draw_config(&mut display, text.as_str()).await;
+                    driver.full_update(&display).await.unwrap();
+                },
+            )
             .await;
         }
     }
@@ -258,11 +321,13 @@ async fn run_config_mode(
     spawner: Spawner,
     net_stack: embassy_net::Stack<'static>,
     flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
+    status: NetworkStatus,
 ) {
     let app = picoserve::make_static!(
         picoserve::AppRouter<server::AppProps>,
         server::AppProps {
-            flash_storage: flash
+            flash_storage: flash,
+            status,
         }
         .build_app()
     );

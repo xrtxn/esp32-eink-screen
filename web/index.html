@@ -8,6 +8,17 @@
 
         <style>
             /* CSS_PLACEHOLDER */
+            #caldav-config {
+                opacity: 0;
+                transition:
+                    opacity 0.5s ease-out,
+                    transform 0.5s ease-out;
+                visibility: hidden;
+            }
+            #caldav-config.visible {
+                opacity: 1;
+                visibility: visible;
+            }
         </style>
     </head>
 
@@ -51,7 +62,7 @@
             </fieldset>
         </div>
 
-        <div class="container" id="caldav-config" style="min-height: 1000px">
+        <div class="container" id="caldav-config">
             <h2>Caldav credentials</h2>
             <fieldset role="group">
                 <input
@@ -79,7 +90,13 @@
                 minlength="1"
                 maxlength="128"
             />
-            <input type="submit" value="Submit" onclick="sendCaldavData()" />
+            <fieldset role="group">
+                <input
+                    type="submit"
+                    value="Submit"
+                    onclick="sendCaldavData()"
+                />
+            </fieldset>
         </div>
 
         <dialog id="success-dialog">
@@ -122,6 +139,23 @@
         </dialog>
 
         <script>
+            const checkNetworkConnection = async () => {
+                try {
+                    // Google's 204 endpoint. Returns 0 bytes of body data.
+                    const url = `https://clients3.google.com/generate_204`;
+
+                    const response = await fetch(url, {
+                        method: "HEAD",
+                        mode: "no-cors",
+                        cache: "no-store",
+                    });
+
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            };
+
             const sendData = async (endpoint, payload) => {
                 try {
                     const response = await fetch(endpoint, {
@@ -145,7 +179,7 @@
                 }
             };
 
-            const sendWifiData = () => {
+            const sendWifiData = async () => {
                 const ssid = document.getElementById("wifi-ssid").value;
                 const pass = document.getElementById("wifi-password").value;
 
@@ -158,7 +192,7 @@
                 });
             };
 
-            const sendCaldavData = () => {
+            const sendCaldavData = async () => {
                 const user = document.getElementById("caldav-username").value;
                 const pass = document.getElementById("caldav-password").value;
                 const url = document.getElementById("caldav-url").value;
@@ -173,6 +207,30 @@
                     url: url,
                 });
             };
+
+            const initializeCaldavConfig = async () => {
+                const target = document.getElementById("caldav-config");
+
+                const tryConnecting = async () => {
+                    if (await checkNetworkConnection()) {
+                        target.classList.add("visible");
+                        return true;
+                    }
+                    return false;
+                };
+
+                const connected = await tryConnecting();
+
+                if (!connected) {
+                    const interval = setInterval(async () => {
+                        if (await tryConnecting()) {
+                            clearInterval(interval);
+                        }
+                    }, 1000);
+                }
+            };
+
+            initializeCaldavConfig();
         </script>
     </body>
 </html>

@@ -16,6 +16,7 @@ pub struct AppProps {
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         storage::FlashStorage<'static>,
     >,
+    pub status: NetworkStatus,
 }
 
 impl AppBuilder for AppProps {
@@ -93,7 +94,17 @@ impl AppBuilder for AppProps {
                     },
                 ),
             )
-            .route("/display_config", picoserve::routing::get(move || display_config_page_handler()))
+            .route(
+                "/display_config",
+                picoserve::routing::get(move || display_config_page_handler()),
+            )
+            .route(
+                "/api/config/network_status",
+                picoserve::routing::get(move || {
+                    let status = self.status.clone();
+                    async move { picoserve::response::Json(status) }
+                }),
+            )
     }
 }
 
@@ -117,6 +128,13 @@ async fn display_config_page_handler() -> impl picoserve::response::IntoResponse
         ],
         DISPLAY_HTML_GZ,
     )
+}
+
+#[derive(serde::Serialize, PartialEq, Clone, Copy)]
+#[serde(tag = "status")]
+pub enum NetworkStatus {
+    AccessPoint,    // The device is running an access point
+    Network,        // The device is connected to a Wi-Fi network
 }
 
 #[cfg(target_arch = "xtensa")]

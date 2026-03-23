@@ -28,6 +28,45 @@
             </nav>
         </div>
 
+        <div class="container" id="network-display">
+            <article aria-busy="true" id="network-card">
+                Checking internet connection
+            </article>
+
+            <script>
+                const networkCard = document.querySelector("#network-card");
+                const checkNetworkConnectionThirdParty = async () => {
+                    try {
+                        // Google's 204 endpoint. Returns 0 bytes of body data.
+                        const url = `https://clients3.google.com/generate_204`;
+
+                        const response = await fetch(url, {
+                            method: "HEAD",
+                            mode: "no-cors",
+                            cache: "no-store",
+                        });
+
+                        return true;
+                    } catch (error) {
+                        return false;
+                    }
+                };
+
+                // Check the internet connection on page load
+                window.addEventListener("load", async () => {
+                    const isConnected =
+                        await checkNetworkConnectionThirdParty();
+                    networkCard.textContent = isConnected
+                        ? "Internet connection is available."
+                        : "No internet connection detected.";
+                    networkCard.setAttribute("aria-busy", "false");
+                    networkCard.style.backgroundColor = isConnected
+                        ? "var(--pico-ins-color)"
+                        : "var(--pico-del-color)";
+                });
+            </script>
+        </div>
+
         <div class="container" id="display-config">
             <label for="display-hours-range">
                 Displayed hours: <span id="hours-value">16</span>
@@ -60,7 +99,7 @@
         </div>
 
         <div class="container">
-            <h3>Placeholder select your display calendars</h3>
+            <h3>Calendar selection</h3>
             <details class="dropdown">
                 <summary>Please select your calendars...</summary>
                 <ul>

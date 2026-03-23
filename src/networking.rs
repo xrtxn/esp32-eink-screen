@@ -7,7 +7,6 @@ use embassy_net::udp::PacketMetadata;
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
-use reqwless::{Certificate, TlsReference};
 use smoltcp::wire::DnsQueryType;
 use static_cell::StaticCell;
 
@@ -102,7 +101,7 @@ pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
 pub async fn network_req(
     stack: Stack<'_>,
     tcp_client: &TcpClient<'_, 1, 4096, 4096>,
-    tls_reference: TlsReference<'_>,
+    tls_reference: reqwless::TlsReference<'_>,
     date: jiff::civil::Date,
     cal_xml_buf: &mut heapless::String<TOTAL_VCAL_BUFFER>,
     req_buffer: &mut [u8; 8192],
@@ -120,7 +119,7 @@ pub async fn network_req(
 
     let dns_socket = DnsSocket::new(stack);
 
-    let certs = Certificate::new(reqwless::X509::PEM(NEXTCLOUD_CERT)).unwrap();
+    let certs = reqwless::Certificate::new(reqwless::X509::PEM(NEXTCLOUD_CERT)).unwrap();
     let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls_reference);
 
     let mut client = HttpClient::new_with_tls(tcp_client, &dns_socket, tls_config);
