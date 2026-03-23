@@ -17,9 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = 8000;
     log::info!("Starting web-test server on http://localhost:{}", port);
 
-    let props = AppProps {
-        status: crate::server::NetworkStatus::Network,
-    };
+    let props = AppProps {};
 
     let app = picoserve::make_static!(
         picoserve::Router<<AppProps as AppBuilder>::PathRouter>,

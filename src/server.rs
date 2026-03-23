@@ -16,7 +16,6 @@ pub struct AppProps {
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         storage::FlashStorage<'static>,
     >,
-    pub status: NetworkStatus,
 }
 
 impl AppBuilder for AppProps {
@@ -97,13 +96,6 @@ impl AppBuilder for AppProps {
             .route(
                 "/display_config",
                 picoserve::routing::get(move || display_config_page_handler()),
-            )
-            .route(
-                "/api/config/network_status",
-                picoserve::routing::get(move || {
-                    let status = self.status.clone();
-                    async move { picoserve::response::Json(status) }
-                }),
             )
     }
 }

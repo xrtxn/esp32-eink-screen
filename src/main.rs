@@ -201,7 +201,7 @@ async fn main(spawner: Spawner) {
         };
 
         let to = embassy_time::with_timeout(timeout, net_stack.wait_config_up()).await;
-        
+
         match to {
             Ok(_) => {
                 if boot_type == BootType::Display {
@@ -210,7 +210,7 @@ async fn main(spawner: Spawner) {
             }
             Err(_) => {
                 let old_count = NETWORK_FAIL_COUNT.load(core::sync::atomic::Ordering::Relaxed);
-                
+
                 let should_reset = match boot_type {
                     BootType::Display if old_count <= NETWORK_FAIL_LIMIT => {
                         go_to_deep_sleep(&mut rtc)
@@ -275,13 +275,10 @@ async fn main(spawner: Spawner) {
                 );
             }
 
-            join(
-                run_config_mode(spawner, net_stack, flash, network_status),
-                async {
-                    display::draw_config(&mut display, text.as_str()).await;
-                    driver.full_update(&display).await.unwrap();
-                },
-            )
+            join(run_config_mode(spawner, net_stack, flash), async {
+                display::draw_config(&mut display, text.as_str()).await;
+                driver.full_update(&display).await.unwrap();
+            })
             .await;
         }
     }
@@ -321,13 +318,11 @@ async fn run_config_mode(
     spawner: Spawner,
     net_stack: embassy_net::Stack<'static>,
     flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
-    status: NetworkStatus,
 ) {
     let app = picoserve::make_static!(
         picoserve::AppRouter<server::AppProps>,
         server::AppProps {
             flash_storage: flash,
-            status,
         }
         .build_app()
     );
