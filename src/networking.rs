@@ -12,6 +12,10 @@ use static_cell::StaticCell;
 
 use crate::storage::CaldavCreds;
 
+const MAX_ORIGIN_LEN: usize = 128;
+const MAX_PATH_LEN: usize = 255;
+const MAX_URL_LEN: usize = MAX_ORIGIN_LEN + MAX_PATH_LEN;
+
 const NEXTCLOUD_CERT: &core::ffi::CStr = {
     // add missing null byte compile time
     let s = concat!(include_str!("../cert.pem"), "\0");
@@ -155,8 +159,6 @@ pub async fn network_req(
     let username = creds.username.as_str();
     let password = creds.password.as_str();
 
-    log::info!("Making request to {url} with username {username}");
-
     let url = fluent_uri::Uri::parse(url);
     let url = match url {
         Ok(u) => u,
@@ -167,14 +169,18 @@ pub async fn network_req(
         }
     };
 
-    let origin: heapless::String<128> = heapless::format!(
+    let origin: heapless::String<MAX_ORIGIN_LEN> = heapless::format!(
         "{}://{}",
         url.scheme().as_str(),
         url.authority().unwrap().as_str()
     )
     .unwrap();
-    // 64 long uid + max 64 long username
-    let path: heapless::String<256> =
+
+    fetch_calendar_endpoint(&mut client, &origin, req_buffer).await;
+
+    todo!();
+
+    let path: heapless::String<MAX_PATH_LEN> =
         heapless::format!("{}/{}/{}/", url.path().as_str(), username, CALENDAR_ID).unwrap();
 
     let mut request = client
@@ -265,4 +271,31 @@ pub(crate) async fn get_events<'a>(
             .collect::<heapless::Vec<_, MAX_DAILY_EVENTS>>()
     );
     events
+}
+
+async fn fetch_calendar_endpoint(
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
+    origin: &str,
+    request_buf: &mut [u8; 8192],
+) {
+    // no extra / at the end
+    let path = "/.well-known/caldav";
+
+    let mut request = client
+        .request(reqwless::request::Method::HEAD, origin)
+        .await
+        .unwrap()
+        .path(path);
+    let response = request.send(request_buf).await.unwrap();
+
+    log::info!("Response status: {:?}", response.status);
+
+    let location: heapless::String<MAX_URL_LEN> = response
+        .headers()
+        .find(|(name, _)| name == &"location")
+        .and_then(|(_, value)| core::str::from_utf8(value).ok())
+        .and_then(|s| heapless::String::try_from(s).ok())
+        .unwrap();
+
+    log::info!("Response body: {}", location);
 }
