@@ -52,22 +52,11 @@ impl AppBuilder for AppProps {
             .route(
                 "/api/config/caldav",
                 picoserve::routing::post(
-                    move |picoserve::extract::Json(resp_caldav): picoserve::extract::Json<
-                        storage::CaldavCreds,
-                    >| async move {
-                        log::info!("Received config change request: {:?}", resp_caldav);
-
+                    move |req: picoserve::extract::Json<storage::CaldavCreds>| async move {
                         #[cfg(target_arch = "xtensa")]
-                        let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+                        return save_caldav_handler(flash, req).await;
                         #[cfg(not(target_arch = "xtensa"))]
-                        let mut nvs = storage::read_config().await.unwrap_or_default();
-
-                        nvs.caldav = Some(resp_caldav);
-
-                        #[cfg(target_arch = "xtensa")]
-                        storage::write_config(flash, nvs).await;
-                        #[cfg(not(target_arch = "xtensa"))]
-                        storage::write_config(nvs).await;
+                        return save_caldav_handler(req).await;
                     },
                 ),
             )
@@ -122,11 +111,43 @@ async fn display_config_page_handler() -> impl picoserve::response::IntoResponse
     )
 }
 
+async fn save_caldav_handler(
+    #[cfg(target_arch = "xtensa")] flash: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        storage::FlashStorage<'static>,
+    >,
+    picoserve::extract::Json(resp_caldav): picoserve::extract::Json<storage::CaldavCreds>,
+) -> impl picoserve::response::IntoResponse {
+    log::info!("Received config change request: {:?}", resp_caldav);
+
+    let url = fluent_uri::Uri::parse(resp_caldav.url.as_str());
+    match url {
+        Ok(res) => log::info!("Parsed URL: {}", res.as_str()),
+        Err(err) => {
+            log::error!("Failed to parse URL: {}", err);
+            return picoserve::response::StatusCode::BAD_REQUEST;
+        }
+    };
+
+    #[cfg(target_arch = "xtensa")]
+    let mut nvs = storage::read_config(flash).await.unwrap_or_default();
+    #[cfg(not(target_arch = "xtensa"))]
+    let mut nvs = storage::read_config().await.unwrap_or_default();
+
+    nvs.caldav = Some(resp_caldav);
+
+    #[cfg(target_arch = "xtensa")]
+    storage::write_config(flash, nvs).await;
+    #[cfg(not(target_arch = "xtensa"))]
+    storage::write_config(nvs).await;
+    return picoserve::response::StatusCode::OK;
+}
+
 #[derive(serde::Serialize, PartialEq, Clone, Copy)]
 #[serde(tag = "status")]
 pub enum NetworkStatus {
-    AccessPoint,    // The device is running an access point
-    Network,        // The device is connected to a Wi-Fi network
+    AccessPoint, // The device is running an access point
+    Network,     // The device is connected to a Wi-Fi network
 }
 
 #[cfg(target_arch = "xtensa")]

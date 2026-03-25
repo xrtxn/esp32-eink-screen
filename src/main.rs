@@ -51,7 +51,7 @@ const NETWORK_FAIL_LIMIT: u8 = 3;
 static DISPLAY_SLEEP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
-pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Config as u8);
+pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 
 /// This is a boolean value to whether the initial NTP sync occurred
 #[esp_hal::ram(unstable(rtc_fast, persistent))]

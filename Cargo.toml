@@ -29,7 +29,7 @@ esp-rtos = { version = "0.2.0", features = [
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32s3", "log-04"] }
 log = "0.4.27"
 
-embassy-net = { version = "0.8", features = [
+embassy-net = { version = "=0.8.0", features = [
   "dhcpv4",
   "log",
   "tcp",
@@ -112,7 +112,7 @@ serde = { version = "1.0.*", default-features = false, features = ["derive"] }
 esp-storage = { version = "0.8.1", features = ["esp32s3"] }
 sequential-storage = { version = "7.1.0", features = ["postcard"] }
 embassy-sync = "0.7.2"
-url = { version = "2.5.8", default-features = false }
+fluent-uri = { version = "0.4.1", default-features = false }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

@@ -180,31 +180,50 @@
             };
 
             const sendWifiData = async () => {
-                const ssid = document.getElementById("wifi-ssid").value;
-                const pass = document.getElementById("wifi-password").value;
+                const ssid = document.getElementById("wifi-ssid");
+                const pass = document.getElementById("wifi-password");
 
-                console.log("SSID:", ssid);
-                console.log("Password:", pass);
+                if (!ssid.value) ssid.setAttribute("aria-invalid", "true");
+                else ssid.removeAttribute("aria-invalid");
+
+                if (!pass.value) pass.setAttribute("aria-invalid", "true");
+                else pass.removeAttribute("aria-invalid");
+
+                if (!ssid.value || !pass.value) return;
+
+                console.log("SSID:", ssid.value);
+                console.log("Password:", pass.value);
 
                 sendData("/api/config/wifi", {
-                    ssid: ssid,
-                    password: pass,
+                    ssid: ssid.value,
+                    password: pass.value,
                 });
             };
 
             const sendCaldavData = async () => {
-                const user = document.getElementById("caldav-username").value;
-                const pass = document.getElementById("caldav-password").value;
-                const url = document.getElementById("caldav-url").value;
+                const user = document.getElementById("caldav-username");
+                const pass = document.getElementById("caldav-password");
+                const url = document.getElementById("caldav-url");
 
-                console.log("Username:", user);
-                console.log("Password:", pass);
-                console.log("URL:", url);
+                if (!user.value) user.setAttribute("aria-invalid", "true");
+                else user.removeAttribute("aria-invalid");
+
+                if (!pass.value) pass.setAttribute("aria-invalid", "true");
+                else pass.removeAttribute("aria-invalid");
+
+                if (!url.value) url.setAttribute("aria-invalid", "true");
+                else url.removeAttribute("aria-invalid");
+
+                if (!user.value || !pass.value || !url.value) return;
+
+                console.log("Username:", user.value);
+                console.log("Password:", pass.value);
+                console.log("URL:", url.value);
 
                 sendData("/api/config/caldav", {
-                    username: user,
-                    password: pass,
-                    url: url,
+                    username: user.value,
+                    password: pass.value,
+                    url: url.value,
                 });
             };
 

@@ -155,11 +155,27 @@ pub async fn network_req(
     let username = creds.username.as_str();
     let password = creds.password.as_str();
 
-    let url = url::Url::parse(url).unwrap();
-    let origin = url.origin().ascii_serialization();
+    log::info!("Making request to {url} with username {username}");
+
+    let url = fluent_uri::Uri::parse(url);
+    let url = match url {
+        Ok(u) => u,
+        Err(e) => {
+            log::error!("Failed to parse URL: {e:?}");
+            crate::BootType::set(crate::BootType::Config);
+            esp_hal::system::software_reset();
+        }
+    };
+
+    let origin: heapless::String<128> = heapless::format!(
+        "{}://{}",
+        url.scheme().as_str(),
+        url.authority().unwrap().as_str()
+    )
+    .unwrap();
     // 64 long uid + max 64 long username
     let path: heapless::String<256> =
-        heapless::format!("{}/{}/{}/", url.path(), username, CALENDAR_ID).unwrap();
+        heapless::format!("{}/{}/{}/", url.path().as_str(), username, CALENDAR_ID).unwrap();
 
     let mut request = client
         .request(reqwless::request::Method::REPORT, &origin)
