@@ -347,3 +347,70 @@ pub(crate) fn extract_calendar_data(
         })
         .collect()
 }
+
+use portable_atomic::AtomicU64;
+pub static CURRENT_UNIX_TIME: AtomicU64 = AtomicU64::new(1711929600); // 2024-04-01
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gettimeofday(
+    tp: *mut core::ffi::c_void,
+    _tzp: *mut core::ffi::c_void,
+) -> i32 {
+    // implement _gettimeofday just in case
+    let now = CURRENT_UNIX_TIME.load(core::sync::atomic::Ordering::Relaxed) as i64;
+    unsafe {
+        if !tp.is_null() {
+            let tp = tp as *mut [i64; 2];
+            (*tp)[0] = now;
+            (*tp)[1] = 0;
+        }
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn time(t: *mut i64) -> i64 {
+    let now = CURRENT_UNIX_TIME.load(core::sync::atomic::Ordering::Relaxed) as i64;
+    unsafe {
+        if !t.is_null() {
+            *t = now;
+        }
+    }
+    now
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mbedtls_time(t: *mut i64) -> i64 {
+    let now = CURRENT_UNIX_TIME.load(core::sync::atomic::Ordering::Relaxed) as i64;
+    unsafe {
+        if !t.is_null() {
+            *t = now;
+        }
+    }
+    now
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mbedtls_platform_gmtime_r(
+    _t: *const i64,
+    tm: *mut core::ffi::c_void,
+) -> *mut core::ffi::c_void {
+    // we don't need this to be perfectly accurate because it's only for x509 expiration checking
+    // just return something non-null that won't crash
+    if tm.is_null() {
+        return core::ptr::null_mut();
+    }
+    let tm_ptr = tm as *mut [i32; 9];
+    unsafe {
+        (*tm_ptr)[0] = 0; // sec
+        (*tm_ptr)[1] = 0; // min
+        (*tm_ptr)[2] = 0; // hour
+        (*tm_ptr)[3] = 1; // mday
+        (*tm_ptr)[4] = 0; // mon
+        (*tm_ptr)[5] = 124; // year since 1900
+        (*tm_ptr)[6] = 0; // wday
+        (*tm_ptr)[7] = 0; // yday
+        (*tm_ptr)[8] = 0;
+    } // isdst
+    tm
+}

@@ -423,6 +423,7 @@ pub mod xtensa {
         let start_display_hour = start_display_hour.clamp(0, 23 - DISPLAY_HOURS);
 
         crate::display::draw_time_row_header(display, start_display_hour);
+        crate::display::draw_base_calendar(display, start_display_hour);
         let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
         for event in events {
             for eevent in event.events {
@@ -441,7 +442,6 @@ pub mod xtensa {
         crate::display::add_footer_info(display);
 
         crate::display::draw_time_ticker(display, &time, start_display_hour);
-        crate::display::draw_base_calendar(display, start_display_hour);
         crate::display::draw_sync_time(display, &time);
         driver.full_update(display).await.unwrap();
 

@@ -16,9 +16,9 @@ const MAX_ORIGIN_LEN: usize = 128;
 const MAX_PATH_LEN: usize = 255;
 const MAX_URL_LEN: usize = MAX_ORIGIN_LEN + MAX_PATH_LEN;
 
-const NEXTCLOUD_CERT: &core::ffi::CStr = {
+pub const CERT_STORE: &core::ffi::CStr = {
     // add missing null byte compile time
-    let s = concat!(include_str!("../cert.pem"), "\0");
+    let s = concat!(include_str!("../certs/cert-mix.pem"), "\0");
 
     match core::ffi::CStr::from_bytes_with_nul(s.as_bytes()) {
         Ok(c) => c,
@@ -42,7 +42,7 @@ static TX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
 static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 
 static CAL_XML_BUF: StaticCell<heapless::String<TOTAL_VCAL_BUFFER>> = StaticCell::new();
-static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
+pub static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
 static CAL_STRINGS: StaticCell<
     heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS>,
 > = StaticCell::new();
@@ -98,6 +98,10 @@ pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
         .await
         .unwrap();
     let time = jiff::Timestamp::from_second(result.seconds as i64).unwrap();
+    crate::CURRENT_UNIX_TIME.store(
+        time.as_second() as u64,
+        core::sync::atomic::Ordering::Relaxed,
+    );
     log::info!("Current time: {:?}", time);
     time
 }
@@ -123,7 +127,7 @@ pub async fn network_req(
 
     let dns_socket = DnsSocket::new(stack);
 
-    let certs = reqwless::Certificate::new(reqwless::X509::PEM(NEXTCLOUD_CERT)).unwrap();
+    let certs = reqwless::Certificate::new(reqwless::X509::PEM(CERT_STORE)).unwrap();
     let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls_reference);
 
     let mut client = HttpClient::new_with_tls(tcp_client, &dns_socket, tls_config);
@@ -176,12 +180,21 @@ pub async fn network_req(
     )
     .unwrap();
 
-    fetch_calendar_endpoint(&mut client, &origin, req_buffer).await;
+    let path: heapless::String<MAX_PATH_LEN> = heapless::format!(
+        "{}/calendars/{}/{}/",
+        url.path().as_str(),
+        username,
+        CALENDAR_ID
+    )
+    .unwrap();
 
-    todo!();
-
-    let path: heapless::String<MAX_PATH_LEN> =
-        heapless::format!("{}/{}/{}/", url.path().as_str(), username, CALENDAR_ID).unwrap();
+    log::debug!(
+        "Request path: {}/{}/{}/{}/",
+        origin,
+        url.path().as_str(),
+        username,
+        CALENDAR_ID
+    );
 
     let mut request = client
         .request(reqwless::request::Method::REPORT, &origin)
@@ -256,6 +269,7 @@ pub(crate) async fn get_events<'a>(
     }
 
     log::trace!("Received calendar data len: {}", cal_xml_buf.len());
+    log::trace!("data: {}", cal_xml_buf);
     let cal_strings = CAL_STRINGS.init(crate::extract_calendar_data(cal_xml_buf));
     // todo do unfolding
     let events: VcalsType<'static> = cal_strings
@@ -277,7 +291,7 @@ async fn fetch_calendar_endpoint(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     origin: &str,
     request_buf: &mut [u8; 8192],
-) {
+) -> Option<heapless::String<MAX_URL_LEN>> {
     // no extra / at the end
     let path = "/.well-known/caldav";
 
@@ -290,12 +304,12 @@ async fn fetch_calendar_endpoint(
 
     log::info!("Response status: {:?}", response.status);
 
-    let location: heapless::String<MAX_URL_LEN> = response
+    let location: Option<heapless::String<MAX_URL_LEN>> = response
         .headers()
-        .find(|(name, _)| name == &"location")
+        .find(|(name, _)| name.eq_ignore_ascii_case("location"))
         .and_then(|(_, value)| core::str::from_utf8(value).ok())
-        .and_then(|s| heapless::String::try_from(s).ok())
-        .unwrap();
+        .and_then(|s| heapless::String::try_from(s).ok());
 
-    log::info!("Response body: {}", location);
+    log::debug!("Response body: {:?}", location);
+    location
 }
