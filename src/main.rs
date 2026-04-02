@@ -15,6 +15,8 @@ mod server;
 mod storage;
 mod wifi;
 
+use embassy_net::dns::DnsSocket;
+use embassy_net::tcp::client::TcpClient;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use weact_studio_epd::graphics::Display420BlackWhite;
@@ -52,10 +54,6 @@ static DISPLAY_SLEEP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
-
-/// This is a boolean value to whether the initial NTP sync occurred
-#[esp_hal::ram(unstable(rtc_fast, persistent))]
-pub static INITIAL_NTP_SYNC: AtomicU8 = AtomicU8::new(0);
 
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static NETWORK_FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
@@ -247,8 +245,8 @@ async fn main(spawner: Spawner) {
 
     match boot_type {
         BootType::Display => {
+            networking::sync_time(prev_boot_count, net_stack, &mut rtc).await;
             run_display_mode(
-                prev_boot_count,
                 &mut rtc,
                 net_stack,
                 trng,
@@ -285,7 +283,6 @@ async fn main(spawner: Spawner) {
 }
 
 async fn run_display_mode(
-    prev_boot_count: u32,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     net_stack: embassy_net::Stack<'_>,
     trng: &mut esp_hal::rng::Trng,
@@ -293,23 +290,16 @@ async fn run_display_mode(
     driver: &mut EpdDriver,
     config: &NvsConfig,
 ) {
-    let need_initial_sync = INITIAL_NTP_SYNC.load(core::sync::atomic::Ordering::Relaxed) == 0;
-    // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
-    if prev_boot_count.is_multiple_of(5) || need_initial_sync {
-        log::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
-        let time = networking::get_time(net_stack).await;
-        // set_current_time_us expects microseconds
-        rtc.set_current_time_us(
-            (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
-        );
-        if need_initial_sync {
-            INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
-        }
-    }
-
     let caldav = config.caldav.clone().unwrap();
 
-    let events = networking::get_events(trng, rtc, net_stack, &caldav).await;
+    let tls = mbedtls_rs::Tls::new(trng).unwrap();
+    let dns_socket = DnsSocket::new(net_stack);
+    let tcp_client = TcpClient::new(
+        net_stack,
+        crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
+    );
+    let events =
+        networking::get_events(tls.reference(), &dns_socket, &tcp_client, rtc, &caldav).await;
 
     display::write_to_screen(display, driver, events, rtc).await;
 }

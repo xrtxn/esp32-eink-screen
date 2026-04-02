@@ -33,6 +33,10 @@ pub const MAX_VCALENDAR_BYTES: usize = 2000;
 
 const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
 
+/// This is a boolean value to whether the initial NTP sync occurred
+#[esp_hal::ram(unstable(rtc_fast, persistent))]
+pub static INITIAL_NTP_SYNC: portable_atomic::AtomicU8 = portable_atomic::AtomicU8::new(0);
+
 pub(crate) static CLIENT_STATE: StaticCell<
     embassy_net::tcp::client::TcpClientState<1, 4096, 4096>,
 > = StaticCell::new();
@@ -65,6 +69,26 @@ impl sntpc::NtpTimestampGenerator for NtpTimestamp {
 
     fn timestamp_subsec_micros(&self) -> u32 {
         self.duration.subsec_micros() as u32
+    }
+}
+
+pub async fn sync_time(
+    prev_boot_count: u32,
+    stack: Stack<'_>,
+    rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
+) {
+    let need_initial_sync = INITIAL_NTP_SYNC.load(core::sync::atomic::Ordering::Relaxed) == 0;
+    // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
+    if prev_boot_count.is_multiple_of(5) || need_initial_sync {
+        log::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
+        let time = get_time(stack).await;
+        // set_current_time_us expects microseconds
+        rtc.set_current_time_us(
+            (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
+        );
+        if need_initial_sync {
+            INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -102,10 +126,19 @@ pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
     time
 }
 
+pub fn init_https_client<'a>(
+    tcp_client: &'a TcpClient<'a, 1, 4096, 4096>,
+    dns_socket: &'a DnsSocket<'a>,
+    tls_reference: reqwless::TlsReference<'a>,
+) -> HttpClient<'a, TcpClient<'a, 1, 4096, 4096>, DnsSocket<'a>> {
+    let certs = reqwless::Certificate::new(reqwless::X509::PEM(CERT_STORE)).unwrap();
+    let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls_reference);
+
+    HttpClient::new_with_tls(tcp_client, dns_socket, tls_config)
+}
+
 pub async fn network_req(
-    stack: Stack<'_>,
-    tcp_client: &TcpClient<'_, 1, 4096, 4096>,
-    tls_reference: reqwless::TlsReference<'_>,
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     date: jiff::civil::Date,
     cal_xml_buf: &mut heapless::String<TOTAL_VCAL_BUFFER>,
     req_buffer: &mut [u8; 8192],
@@ -120,13 +153,6 @@ pub async fn network_req(
         date.month() as u8,
         date.day()
     );
-
-    let dns_socket = DnsSocket::new(stack);
-
-    let certs = reqwless::Certificate::new(reqwless::X509::PEM(CERT_STORE)).unwrap();
-    let tls_config = TlsConfig::new(reqwless::TlsVersion::Tls1_3, certs, tls_reference);
-
-    let mut client = HttpClient::new_with_tls(tcp_client, &dns_socket, tls_config);
 
     // todo get date and time based on user timezone, caldav only accepts utc time
     // also limit to a few hours
@@ -222,30 +248,25 @@ pub async fn network_req(
 pub(crate) type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
 pub(crate) async fn get_events<'a>(
-    trng: &mut esp_hal::rng::Trng,
+    tls_ref: reqwless::TlsReference<'_>,
+    dns_socket: &'a DnsSocket<'_>,
+    tcp: &TcpClient<'_, 1, 4096, 4096>,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
-    stack: embassy_net::Stack<'_>,
     credentials: &CaldavCreds,
 ) -> VcalsType<'a> {
-    let tls = mbedtls_rs::Tls::new(trng).unwrap();
-
     let cal_xml_buf = CAL_XML_BUF.init(heapless::String::new());
     let req_buffer = REQ_BUFFER.init([0u8; 8192]);
 
-    let tcp_client = TcpClient::new(
-        stack,
-        crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
-    );
     let time_from_rtc =
         jiff::Timestamp::from_second(rtc.current_time_us() as i64 / 1_000_000).unwrap();
+
+    let mut client = init_https_client(tcp, dns_socket, tls_ref);
 
     let mut success = false;
     for tries in 1..=3 {
         req_buffer.fill(0);
         let req = crate::networking::network_req(
-            stack,
-            &tcp_client,
-            tls.reference(),
+            &mut client,
             time_from_rtc.to_zoned(jiff::tz::TimeZone::UTC).date(),
             cal_xml_buf,
             req_buffer,
@@ -286,7 +307,7 @@ pub(crate) async fn get_events<'a>(
 async fn fetch_calendar_endpoint(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     origin: &str,
-    request_buf: &mut [u8; 8192],
+    response_buf: &mut [u8; 8192],
 ) -> Option<heapless::String<MAX_URL_LEN>> {
     // no extra / at the end
     let path = "/.well-known/caldav";
@@ -296,7 +317,7 @@ async fn fetch_calendar_endpoint(
         .await
         .unwrap()
         .path(path);
-    let response = request.send(request_buf).await.unwrap();
+    let response = request.send(response_buf).await.unwrap();
 
     log::info!("Response status: {:?}", response.status);
 
