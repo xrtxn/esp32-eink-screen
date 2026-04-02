@@ -41,7 +41,8 @@ fn build_index_html() {
 }
 
 fn build_display_html() {
-    let html = std::fs::read_to_string("../web/config.html").expect("Failed to read web/config.html");
+    let html =
+        std::fs::read_to_string("../web/config.html").expect("Failed to read web/config.html");
     let css = std::fs::read_to_string("../web/static/pico.min.css")
         .expect("Failed to read web/static/pico.min.css");
 

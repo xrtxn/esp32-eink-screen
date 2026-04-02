@@ -14,7 +14,7 @@ use static_cell::StaticCell;
 
 use crate::storage::WifiCreds;
 
-pub const IP_ADDR: [u8; 4] = [192, 168, 0, 1];
+pub const AP_IP_ADDR: [u8; 4] = [192, 168, 0, 1];
 
 static NETWORK_STACK: StaticCell<embassy_net::StackResources<5>> = StaticCell::new();
 static DHCP_UDP_BUFFERS: StaticCell<UdpBuffers<1>> = StaticCell::new();
@@ -65,7 +65,7 @@ pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
 
 #[embassy_executor::task]
 pub async fn dhcp_server_task(stack: embassy_net::Stack<'static>) {
-    let server_ip = core::net::Ipv4Addr::from_octets(IP_ADDR);
+    let server_ip = core::net::Ipv4Addr::from_octets(AP_IP_ADDR);
     let mut gw_buf = [server_ip];
     let server_options = edge_dhcp::server::ServerOptions::new(server_ip, Some(&mut gw_buf));
     let mut server = edge_dhcp::server::Server::<_, 4>::new_with_et(server_ip);
@@ -132,8 +132,8 @@ pub fn start_ap(
     let wifi_interface = interfaces.ap;
 
     let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::from_octets(IP_ADDR), 24),
-        gateway: Some(embassy_net::Ipv4Address::from_octets(IP_ADDR)),
+        address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::from_octets(AP_IP_ADDR), 24),
+        gateway: Some(embassy_net::Ipv4Address::from_octets(AP_IP_ADDR)),
         dns_servers: Default::default(),
     });
 
