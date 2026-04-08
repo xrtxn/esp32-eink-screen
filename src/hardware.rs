@@ -7,7 +7,7 @@ use esp_hal::{
 use crate::{BOOT_TYPES, BootType};
 
 const SLEEP_DURATION: u64 = 300;
-const TZ: jiff::tz::TimeZone = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
+const TZ: jiff::tz::TimeZone = jiff::tz::TimeZone::fixed(jiff::tz::offset(2));
 
 pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
     let sleep_time = core::time::Duration::from_secs(SLEEP_DURATION);

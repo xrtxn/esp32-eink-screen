@@ -10,12 +10,29 @@ pub const WEB_TASK_POOL_SIZE: usize = 2;
 #[cfg(target_arch = "xtensa")]
 pub use xtensa::*;
 
+#[cfg(target_arch = "xtensa")]
+static REQ_MUTEX: static_cell::StaticCell<
+    embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut [u8; 8192],
+    >,
+> = static_cell::StaticCell::new();
+
 pub struct AppProps {
     #[cfg(target_arch = "xtensa")]
     pub flash_storage: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         storage::FlashStorage<'static>,
     >,
+    #[cfg(target_arch = "xtensa")]
+    pub tls_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut mbedtls_rs::Tls<'static>,
+    >,
+    #[cfg(target_arch = "xtensa")]
+    pub dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
+    #[cfg(target_arch = "xtensa")]
+    pub tcp_client: &'static embassy_net::tcp::client::TcpClient<'static, 1, 4096, 4096>,
 }
 
 impl AppBuilder for AppProps {
@@ -24,6 +41,18 @@ impl AppBuilder for AppProps {
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
         #[cfg(target_arch = "xtensa")]
         let flash = self.flash_storage;
+        #[cfg(target_arch = "xtensa")]
+        let tls_mutex = self.tls_mutex;
+        #[cfg(target_arch = "xtensa")]
+        let dns_socket = self.dns_socket;
+        #[cfg(target_arch = "xtensa")]
+        let tcp_client = self.tcp_client;
+
+        // Reuse existing REQ_BUFFER
+        #[cfg(target_arch = "xtensa")]
+        let req_buffer = crate::networking::REQ_BUFFER.init([0u8; 8192]);
+        #[cfg(target_arch = "xtensa")]
+        let req_buffer_mutex = &*REQ_MUTEX.init(embassy_sync::mutex::Mutex::new(req_buffer));
 
         picoserve::Router::new()
             .route("/", picoserve::routing::get(move || config_page_handler()))
@@ -86,6 +115,61 @@ impl AppBuilder for AppProps {
                 "/display_config",
                 picoserve::routing::get(move || display_config_page_handler()),
             )
+            .route(
+                "/api/config/caldav/endpoint",
+                picoserve::routing::post(move |body| async move {
+                    #[cfg(target_arch = "xtensa")]
+                    return fetch_domain_endpoint(
+                        tls_mutex,
+                        dns_socket,
+                        tcp_client,
+                        body,
+                        req_buffer_mutex,
+                    )
+                    .await;
+                    #[cfg(not(target_arch = "xtensa"))]
+                    return fetch_domain_endpoint(body).await;
+                }),
+            )
+    }
+}
+
+async fn fetch_domain_endpoint(
+    #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut mbedtls_rs::Tls<'static>,
+    >,
+    #[cfg(target_arch = "xtensa")] dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
+    #[cfg(target_arch = "xtensa")] tcp_client: &'static embassy_net::tcp::client::TcpClient<
+        'static,
+        1,
+        4096,
+        4096,
+    >,
+    body: alloc::string::String,
+    #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut [u8; 8192],
+    >,
+) -> Result<picoserve::response::json::Json<serde_json::Value>, picoserve::response::StatusCode> {
+    #[cfg(target_arch = "xtensa")]
+    {
+        let mut buf_guard = req_buffer_mutex.lock().await;
+
+        let tls = tls_mutex.lock().await;
+        let tls_reference = tls.reference();
+
+        let mut client =
+            crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
+
+        let endpoint =
+            crate::networking::fetch_domain_endpoint(&mut client, &body, &mut *buf_guard).await;
+        match endpoint {
+            Some(url) => Ok(picoserve::response::json::Json(
+                serde_json::json!({ "endpoint": url }),
+            )),
+            None => Err(picoserve::response::StatusCode::BAD_REQUEST),
+        }
     }
 }
 

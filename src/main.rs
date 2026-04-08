@@ -58,6 +58,12 @@ pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static NETWORK_FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
 
+static TLS: static_cell::StaticCell<mbedtls_rs::Tls<'static>> = static_cell::StaticCell::new();
+static TLS_MUTEX: static_cell::StaticCell<embassy_sync::mutex::Mutex<NoopRawMutex, &'static mut mbedtls_rs::Tls<'static>>> = static_cell::StaticCell::new();
+static DNS_SOCKET: static_cell::StaticCell<DnsSocket<'static>> = static_cell::StaticCell::new();
+static TCP_CLIENT: static_cell::StaticCell<TcpClient<'static, 1, 4096, 4096>> =
+    static_cell::StaticCell::new();
+
 type EpdDriver = WeActStudio420BlackWhiteDriver<
     SPIInterface<
         ExclusiveDevice<Spi<'static, esp_hal::Async>, Output<'static>, Delay>,
@@ -273,7 +279,7 @@ async fn main(spawner: Spawner) {
                 );
             }
 
-            join(run_config_mode(spawner, net_stack, flash), async {
+            join(run_config_mode(spawner, net_stack, flash, trng), async {
                 display::draw_config(&mut display, text.as_str()).await;
                 driver.full_update(&display).await.unwrap();
             })
@@ -284,20 +290,20 @@ async fn main(spawner: Spawner) {
 
 async fn run_display_mode(
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
-    net_stack: embassy_net::Stack<'_>,
-    trng: &mut esp_hal::rng::Trng,
+    net_stack: embassy_net::Stack<'static>,
+    trng: &'static mut esp_hal::rng::Trng,
     display: &mut Display420BlackWhite,
     driver: &mut EpdDriver,
     config: &NvsConfig,
 ) {
     let caldav = config.caldav.clone().unwrap();
 
-    let tls = mbedtls_rs::Tls::new(trng).unwrap();
-    let dns_socket = DnsSocket::new(net_stack);
-    let tcp_client = TcpClient::new(
+    let tls = TLS.init(mbedtls_rs::Tls::new(trng).unwrap());
+    let dns_socket = DNS_SOCKET.init(DnsSocket::new(net_stack));
+    let tcp_client = TCP_CLIENT.init(TcpClient::new(
         net_stack,
         crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
-    );
+    ));
     let events =
         networking::get_events(tls.reference(), &dns_socket, &tcp_client, rtc, &caldav).await;
 
@@ -308,11 +314,23 @@ async fn run_config_mode(
     spawner: Spawner,
     net_stack: embassy_net::Stack<'static>,
     flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
+    trng: &'static mut esp_hal::rng::Trng,
 ) {
+    let tls = TLS.init(mbedtls_rs::Tls::new(trng).unwrap());
+    let tls_mutex = TLS_MUTEX.init(embassy_sync::mutex::Mutex::new(tls));
+    let dns_socket = DNS_SOCKET.init(DnsSocket::new(net_stack));
+    let tcp_client = TCP_CLIENT.init(TcpClient::new(
+        net_stack,
+        crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
+    ));
+
     let app = picoserve::make_static!(
         picoserve::AppRouter<server::AppProps>,
         server::AppProps {
             flash_storage: flash,
+            tls_mutex,
+            dns_socket,
+            tcp_client,
         }
         .build_app()
     );

@@ -7,7 +7,7 @@ use heapless::format as hformat;
 use log::info;
 use weact_studio_epd::Color as EpdColor;
 
-pub const DISPLAY_HOURS: u8 = 18;
+pub const DISPLAY_HOURS: u8 = 8;
 #[allow(dead_code)]
 pub const DISPLAY_WIDTH: u32 = 300;
 pub const DISPLAY_HEIGHT: u32 = 400;
@@ -420,11 +420,11 @@ pub mod xtensa {
         let time = hardware::get_time(rtc);
         let start_display_hour = time.hour() as u8;
 
-        let start_display_hour = start_display_hour.clamp(0, 23 - DISPLAY_HOURS);
+        let start_display_hour = start_display_hour.clamp(0, 24 - DISPLAY_HOURS);
 
         crate::display::draw_time_row_header(display, start_display_hour);
         crate::display::draw_base_calendar(display, start_display_hour);
-        let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(1));
+        let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(2));
         for event in events {
             for eevent in event.events {
                 let start_dt = eevent.dtstart.unwrap().to_zoned(tz.clone());

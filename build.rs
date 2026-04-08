@@ -191,7 +191,7 @@ fn add_git_info() {
 }
 
 fn load_env() {
-    dotenvy::dotenv().expect("Failed to read .env file");
+    dotenvy::dotenv().ok();
 
     println!("cargo:rerun-if-changed=.env");
 

@@ -25,7 +25,7 @@ pub const CERT_STORE: &core::ffi::CStr = {
         Err(_) => panic!("cert contains interior null bytes or is missing terminator"),
     }
 };
-const CALENDAR_ID: &str = "szakdoga-teszt";
+const CALENDAR_ID: &str = "e4a2c806-b52b-43a3-828b-d97ec82f698b";
 
 // This is one event every half hour
 pub const MAX_DAILY_EVENTS: usize = 4;
@@ -304,7 +304,7 @@ pub(crate) async fn get_events<'a>(
     events
 }
 
-async fn fetch_calendar_endpoint(
+pub async fn fetch_domain_endpoint(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     origin: &str,
     response_buf: &mut [u8; 8192],
@@ -312,12 +312,23 @@ async fn fetch_calendar_endpoint(
     // no extra / at the end
     let path = "/.well-known/caldav";
 
-    let mut request = client
+    let mut request = match client
         .request(reqwless::request::Method::HEAD, origin)
         .await
-        .unwrap()
-        .path(path);
-    let response = request.send(response_buf).await.unwrap();
+    {
+        Ok(req) => req.path(path),
+        Err(e) => {
+            log::error!("Failed to create request: {:?}", e);
+            return None;
+        }
+    };
+    let response = match request.send(response_buf).await {
+        Ok(res) => res,
+        Err(e) => {
+            log::error!("Failed to send request: {:?}", e);
+            return None;
+        }
+    };
 
     log::info!("Response status: {:?}", response.status);
 
