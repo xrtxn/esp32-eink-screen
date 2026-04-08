@@ -243,6 +243,7 @@ pub async fn network_req(
 
 pub(crate) type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
 
+// todo pass http client
 pub(crate) async fn get_events<'a>(
     tls_ref: reqwless::TlsReference<'_>,
     dns_socket: &'a DnsSocket<'_>,
@@ -336,4 +337,43 @@ pub async fn fetch_domain_endpoint(
 
     log::debug!("Response body: {:?}", location);
     location
+}
+
+pub(crate) async fn fetch_principal_url<'a>(
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
+    origin: &str,
+    credentials: &CaldavCreds,
+    response_buf: &mut [u8; 8192],
+) {
+    const BODY: &str = r#"<d:propfind xmlns:d="DAV:">
+      <d:prop>
+        <d:current-user-principal />
+      </d:prop>
+    </d:propfind>"#;
+    let username = credentials.username.as_str();
+    let password = credentials.password.as_str();
+    let url: &str = &credentials.url;
+
+    let mut request = client
+        .request(reqwless::request::Method::PROPFIND, &origin)
+        .await
+        .unwrap()
+        .basic_auth(username, password)
+        .path(url)
+        .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
+        .body(BODY.as_bytes());
+
+    let response = request.send(response_buf).await.unwrap();
+
+    log::info!("Response status: {:?}", response.status);
+    let res = response.body().read_to_end().await.unwrap();
+
+    let res = match str::from_utf8(res) {
+        Ok(v) => v,
+        Err(_) => {
+            log::error!("Response body (hex): {:02x?}", res);
+            todo!()
+        }
+    };
+    log::info!("Response body: {}", res);
 }

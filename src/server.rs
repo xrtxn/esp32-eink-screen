@@ -4,6 +4,8 @@ use picoserve::AppBuilder;
 #[cfg(not(target_arch = "xtensa"))]
 use std::string::String;
 
+#[cfg(target_arch = "xtensa")]
+use crate::networking::fetch_principal_url;
 use crate::storage;
 
 const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/credentials.html.gz"));
@@ -78,7 +80,6 @@ impl AppBuilder for AppProps {
                         let mut nvs = storage::read_config().await.unwrap_or_default();
 
                         nvs.wifi = Some(resp_wifi);
-
                         #[cfg(target_arch = "xtensa")]
                         storage::write_config(flash, nvs).await;
                         #[cfg(not(target_arch = "xtensa"))]
@@ -134,7 +135,7 @@ impl AppBuilder for AppProps {
                             tls_mutex,
                             dns_socket,
                             tcp_client,
-                            body.url,
+                            &body.url,
                             req_buffer_mutex,
                         )
                         .await;
@@ -142,6 +143,30 @@ impl AppBuilder for AppProps {
                         return fetch_domain_endpoint(body.url).await;
                     },
                 ),
+            )
+            .route(
+                "/api/config/caldav/calendars",
+                picoserve::routing::get(move || async move {
+                    #[cfg(target_arch = "xtensa")]
+                    {
+                        let nvs = storage::read_config(flash)
+                            .await
+                            .unwrap_or_default()
+                            .caldav
+                            .unwrap();
+                        return fetch_principal(
+                            tls_mutex,
+                            dns_socket,
+                            tcp_client,
+                            &nvs.url,
+                            req_buffer_mutex,
+                            &nvs,
+                        )
+                        .await;
+                    }
+                    #[cfg(not(target_arch = "xtensa"))]
+                    return fetch_domain_endpoint(body.url).await;
+                }),
             )
     }
 }
@@ -158,8 +183,8 @@ async fn fetch_domain_endpoint(
         4096,
         4096,
     >,
-    #[cfg(target_arch = "xtensa")] body: alloc::string::String,
-    #[cfg(not(target_arch = "xtensa"))] body: String,
+    #[cfg(target_arch = "xtensa")] body: &str,
+    #[cfg(not(target_arch = "xtensa"))] body: &str,
     #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         &'static mut [u8; 8192],
@@ -176,13 +201,58 @@ async fn fetch_domain_endpoint(
             crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
 
         let endpoint =
-            crate::networking::fetch_domain_endpoint(&mut client, &body, &mut *buf_guard).await;
+            crate::networking::fetch_domain_endpoint(&mut client, body, &mut *buf_guard).await;
         match endpoint {
             Some(url) => Ok(picoserve::response::json::Json(EndpointResponse {
                 endpoint: url,
             })),
             None => Err(picoserve::response::StatusCode::BAD_REQUEST),
         }
+    }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        let _ = body;
+        let resp: heapless::String<{ MAX_URL_LEN }> =
+            heapless::String::try_from("https://example.com/caldav").unwrap();
+        Ok(picoserve::response::json::Json(EndpointResponse {
+            endpoint: resp,
+        }))
+    }
+}
+
+async fn fetch_principal(
+    #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut mbedtls_rs::Tls<'static>,
+    >,
+    #[cfg(target_arch = "xtensa")] dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
+    #[cfg(target_arch = "xtensa")] tcp_client: &'static embassy_net::tcp::client::TcpClient<
+        'static,
+        1,
+        4096,
+        4096,
+    >,
+    #[cfg(target_arch = "xtensa")] body: &str,
+    #[cfg(not(target_arch = "xtensa"))] body: &str,
+    #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut [u8; 8192],
+    >,
+    credentials: &storage::CaldavCreds,
+) -> Result<picoserve::response::json::Json<EndpointResponse>, picoserve::response::StatusCode> {
+    #[cfg(target_arch = "xtensa")]
+    {
+        let mut buf_guard = req_buffer_mutex.lock().await;
+
+        let tls = tls_mutex.lock().await;
+        let tls_reference = tls.reference();
+
+        let mut client =
+            crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
+
+        crate::networking::fetch_principal_url(&mut client, body, credentials, &mut *buf_guard)
+            .await;
+        todo!()
     }
     #[cfg(not(target_arch = "xtensa"))]
     {
