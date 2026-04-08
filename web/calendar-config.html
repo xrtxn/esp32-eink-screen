@@ -43,7 +43,7 @@
                 const networkCard = document.querySelector("#network-card");
                 const checkNetworkConnectionThirdParty = async () => {
                     try {
-                        // Google's 204 endpoint. Returns 0 bytes of body data.
+                        // Google's 204 endpoint.
                         const url = `https://clients3.google.com/generate_204`;
 
                         const response = await fetch(url, {

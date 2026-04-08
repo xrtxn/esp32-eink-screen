@@ -59,7 +59,9 @@ pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 pub static NETWORK_FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
 
 static TLS: static_cell::StaticCell<mbedtls_rs::Tls<'static>> = static_cell::StaticCell::new();
-static TLS_MUTEX: static_cell::StaticCell<embassy_sync::mutex::Mutex<NoopRawMutex, &'static mut mbedtls_rs::Tls<'static>>> = static_cell::StaticCell::new();
+static TLS_MUTEX: static_cell::StaticCell<
+    embassy_sync::mutex::Mutex<NoopRawMutex, &'static mut mbedtls_rs::Tls<'static>>,
+> = static_cell::StaticCell::new();
 static DNS_SOCKET: static_cell::StaticCell<DnsSocket<'static>> = static_cell::StaticCell::new();
 static TCP_CLIENT: static_cell::StaticCell<TcpClient<'static, 1, 4096, 4096>> =
     static_cell::StaticCell::new();

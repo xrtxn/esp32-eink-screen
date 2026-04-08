@@ -1,4 +1,8 @@
+#[cfg(target_arch = "xtensa")]
+use alloc::string::String;
 use picoserve::AppBuilder;
+#[cfg(not(target_arch = "xtensa"))]
+use std::string::String;
 
 use crate::storage;
 
@@ -121,19 +125,23 @@ impl AppBuilder for AppProps {
             )
             .route(
                 "/api/config/caldav/endpoint",
-                picoserve::routing::post(move |body| async move {
-                    #[cfg(target_arch = "xtensa")]
-                    return fetch_domain_endpoint(
-                        tls_mutex,
-                        dns_socket,
-                        tcp_client,
-                        body,
-                        req_buffer_mutex,
-                    )
-                    .await;
-                    #[cfg(not(target_arch = "xtensa"))]
-                    return fetch_domain_endpoint(body).await;
-                }),
+                picoserve::routing::post(
+                    move |picoserve::extract::Json(body): picoserve::extract::Json<
+                        EndpointRequest,
+                    >| async move {
+                        #[cfg(target_arch = "xtensa")]
+                        return fetch_domain_endpoint(
+                            tls_mutex,
+                            dns_socket,
+                            tcp_client,
+                            body.url,
+                            req_buffer_mutex,
+                        )
+                        .await;
+                        #[cfg(not(target_arch = "xtensa"))]
+                        return fetch_domain_endpoint(body.url).await;
+                    },
+                ),
             )
     }
 }
@@ -185,6 +193,11 @@ async fn fetch_domain_endpoint(
             endpoint: resp,
         }))
     }
+}
+
+#[derive(serde::Deserialize)]
+struct EndpointRequest {
+    url: String,
 }
 
 #[derive(serde::Serialize)]
