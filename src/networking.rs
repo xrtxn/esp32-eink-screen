@@ -12,10 +12,6 @@ use static_cell::StaticCell;
 
 use crate::storage::CaldavCreds;
 
-const MAX_ORIGIN_LEN: usize = 128;
-const MAX_PATH_LEN: usize = 255;
-const MAX_URL_LEN: usize = MAX_ORIGIN_LEN + MAX_PATH_LEN;
-
 pub const CERT_STORE: &core::ffi::CStr = {
     // add missing null byte compile time
     let s = concat!(include_str!("../certs/cert-mix.pem"), "\0");
@@ -195,14 +191,14 @@ pub async fn network_req(
         }
     };
 
-    let origin: heapless::String<MAX_ORIGIN_LEN> = heapless::format!(
+    let origin: heapless::String<{ crate::server::MAX_ORIGIN_LEN }> = heapless::format!(
         "{}://{}",
         url.scheme().as_str(),
         url.authority().unwrap().as_str()
     )
     .unwrap();
 
-    let path: heapless::String<MAX_PATH_LEN> = heapless::format!(
+    let path: heapless::String<{ crate::server::MAX_PATH_LEN }> = heapless::format!(
         "{}/calendars/{}/{}/",
         url.path().as_str(),
         username,
@@ -308,7 +304,7 @@ pub async fn fetch_domain_endpoint(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     origin: &str,
     response_buf: &mut [u8; 8192],
-) -> Option<heapless::String<MAX_URL_LEN>> {
+) -> Option<heapless::String<{ crate::server::MAX_URL_LEN }>> {
     // no extra / at the end
     let path = "/.well-known/caldav";
 
@@ -332,7 +328,7 @@ pub async fn fetch_domain_endpoint(
 
     log::info!("Response status: {:?}", response.status);
 
-    let location: Option<heapless::String<MAX_URL_LEN>> = response
+    let location: Option<heapless::String<{ crate::server::MAX_URL_LEN }>> = response
         .headers()
         .find(|(name, _)| name.eq_ignore_ascii_case("location"))
         .and_then(|(_, value)| core::str::from_utf8(value).ok())

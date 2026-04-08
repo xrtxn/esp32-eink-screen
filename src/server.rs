@@ -1,15 +1,15 @@
-#[cfg(target_arch = "xtensa")]
-use alloc::string::String;
 use picoserve::AppBuilder;
-#[cfg(not(target_arch = "xtensa"))]
-use std::string::String;
 
 use crate::storage;
 
-const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
-const DISPLAY_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/config.html.gz"));
+const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/credentials.html.gz"));
+const DISPLAY_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/calendar-config.html.gz"));
 
 pub const WEB_TASK_POOL_SIZE: usize = 2;
+
+pub const MAX_ORIGIN_LEN: usize = 128;
+pub const MAX_PATH_LEN: usize = 255;
+pub const MAX_URL_LEN: usize = MAX_ORIGIN_LEN + MAX_PATH_LEN;
 
 #[cfg(target_arch = "xtensa")]
 pub use xtensa::*;
@@ -159,8 +159,6 @@ async fn fetch_domain_endpoint(
 ) -> Result<picoserve::response::json::Json<EndpointResponse>, picoserve::response::StatusCode> {
     #[cfg(target_arch = "xtensa")]
     {
-        use alloc::string::ToString;
-
         let mut buf_guard = req_buffer_mutex.lock().await;
 
         let tls = tls_mutex.lock().await;
@@ -173,7 +171,7 @@ async fn fetch_domain_endpoint(
             crate::networking::fetch_domain_endpoint(&mut client, &body, &mut *buf_guard).await;
         match endpoint {
             Some(url) => Ok(picoserve::response::json::Json(EndpointResponse {
-                endpoint: url.to_string(),
+                endpoint: url,
             })),
             None => Err(picoserve::response::StatusCode::BAD_REQUEST),
         }
@@ -181,15 +179,17 @@ async fn fetch_domain_endpoint(
     #[cfg(not(target_arch = "xtensa"))]
     {
         let _ = body;
+        let resp: heapless::String<{ MAX_URL_LEN }> =
+            heapless::String::try_from("https://example.com/caldav").unwrap();
         Ok(picoserve::response::json::Json(EndpointResponse {
-            endpoint: "https://example.com/caldav".to_string(),
+            endpoint: resp,
         }))
     }
 }
 
 #[derive(serde::Serialize)]
 struct EndpointResponse {
-    endpoint: String,
+    endpoint: heapless::String<{ MAX_URL_LEN }>,
 }
 
 async fn config_page_handler() -> impl picoserve::response::IntoResponse {
