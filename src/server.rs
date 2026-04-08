@@ -1,4 +1,8 @@
+#[cfg(target_arch = "xtensa")]
+use alloc::string::String;
 use picoserve::AppBuilder;
+#[cfg(not(target_arch = "xtensa"))]
+use std::string::String;
 
 use crate::storage;
 
@@ -146,14 +150,17 @@ async fn fetch_domain_endpoint(
         4096,
         4096,
     >,
-    body: alloc::string::String,
+    #[cfg(target_arch = "xtensa")] body: alloc::string::String,
+    #[cfg(not(target_arch = "xtensa"))] body: String,
     #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         &'static mut [u8; 8192],
     >,
-) -> Result<picoserve::response::json::Json<serde_json::Value>, picoserve::response::StatusCode> {
+) -> Result<picoserve::response::json::Json<EndpointResponse>, picoserve::response::StatusCode> {
     #[cfg(target_arch = "xtensa")]
     {
+        use alloc::string::ToString;
+
         let mut buf_guard = req_buffer_mutex.lock().await;
 
         let tls = tls_mutex.lock().await;
@@ -165,12 +172,24 @@ async fn fetch_domain_endpoint(
         let endpoint =
             crate::networking::fetch_domain_endpoint(&mut client, &body, &mut *buf_guard).await;
         match endpoint {
-            Some(url) => Ok(picoserve::response::json::Json(
-                serde_json::json!({ "endpoint": url }),
-            )),
+            Some(url) => Ok(picoserve::response::json::Json(EndpointResponse {
+                endpoint: url.to_string(),
+            })),
             None => Err(picoserve::response::StatusCode::BAD_REQUEST),
         }
     }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        let _ = body;
+        Ok(picoserve::response::json::Json(EndpointResponse {
+            endpoint: "https://example.com/caldav".to_string(),
+        }))
+    }
+}
+
+#[derive(serde::Serialize)]
+struct EndpointResponse {
+    endpoint: String,
 }
 
 async fn config_page_handler() -> impl picoserve::response::IntoResponse {
