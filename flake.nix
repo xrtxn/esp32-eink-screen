@@ -47,6 +47,7 @@
               pkgs.SDL2
 
               pkgs.bacon
+              pkgs.pre-commit
             ];
 
             shellHook = ''
