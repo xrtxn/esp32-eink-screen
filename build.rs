@@ -3,31 +3,50 @@ use std::process::Command;
 use vergen::{BuildBuilder, Emitter};
 
 fn main() {
-    // always add new git footer when files changed
-    println!("cargo:rerun-if-changed=src");
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs");
-    println!("cargo:rerun-if-changed=.git/index");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let mut workspace_dir = std::path::PathBuf::from(manifest_dir);
+    if !workspace_dir.join("web").exists() {
+        workspace_dir.pop();
+    }
+    std::env::set_current_dir(&workspace_dir).expect("Failed to change directory to workspace");
 
     load_env();
-    add_git_info();
-    build_index_html();
-    build_display_html();
-    linker_be_nice();
-    // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
-    println!("cargo:rustc-link-arg=-Tlinkall.x");
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    match target_arch.as_str() {
+        "xtensa" => {
+            // always add new git footer when files changed
+            println!("cargo:rerun-if-changed=src");
+            println!("cargo:rerun-if-changed=.git/HEAD");
+            println!("cargo:rerun-if-changed=.git/refs");
+            println!("cargo:rerun-if-changed=.git/index");
+
+            add_git_info();
+            build_index_html();
+            build_display_html();
+            linker_be_nice();
+            // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
+            println!("cargo:rustc-link-arg=-Tlinkall.x");
+        }
+        "x86_64" => {
+            println!("cargo:rustc-env=GIT_SHORT=emulator");
+            println!("cargo:rustc-env=GIT_DIRTY=false");
+            build_index_html();
+            build_display_html();
+        }
+        _ => panic!("Unsupported target architecture: {}", target_arch),
+    }
 }
 
 fn build_index_html() {
     println!("cargo:rerun-if-changed=web/credentials.html");
     println!("cargo:rerun-if-changed=web/static/pico.min.css");
-    println!("cargo:rerun-if-changed=web/cog.svg");
+    println!("cargo:rerun-if-changed=web/credentials-favicon.svg");
 
     let html = std::fs::read_to_string("web/credentials.html")
         .expect("Failed to read web/credentials.html");
     let css = std::fs::read_to_string("web/static/pico.min.css")
         .expect("Failed to read web/static/pico.min.css");
-    let favicon = std::fs::read("web/cog.svg").expect("Failed to read");
+    let favicon = std::fs::read("web/credentials-favicon.svg").expect("Failed to read");
 
     use base64::prelude::*;
     let favicon_base64 = BASE64_STANDARD.encode(&favicon);
@@ -65,13 +84,13 @@ fn build_index_html() {
 fn build_display_html() {
     println!("cargo:rerun-if-changed=web/calendar-config.html");
     println!("cargo:rerun-if-changed=web/static/pico.min.css");
-    println!("cargo:rerun-if-changed=web/calendar-cog.svg");
+    println!("cargo:rerun-if-changed=web/calendar-favicon.svg");
 
     let html = std::fs::read_to_string("web/calendar-config.html")
         .expect("Failed to read web/calendar-config.html");
     let css = std::fs::read_to_string("web/static/pico.min.css")
         .expect("Failed to read web/static/pico.min.css");
-    let favicon = std::fs::read("web/calendar-cog.svg").expect("Failed to read favicon");
+    let favicon = std::fs::read("web/calendar-favicon.svg").expect("Failed to read favicon");
 
     use base64::prelude::*;
     let favicon_base64 = BASE64_STANDARD.encode(&favicon);

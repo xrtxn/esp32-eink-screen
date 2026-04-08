@@ -785,6 +785,8 @@ dependencies = [
 name = "display-simulator"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "dotenvy",
  "embedded-graphics",
  "embedded-graphics-simulator",
  "env_logger",
@@ -792,6 +794,7 @@ dependencies = [
  "jiff",
  "log",
  "profont",
+ "vergen",
  "weact-studio-epd",
 ]
 
@@ -4042,6 +4045,7 @@ name = "web-test"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "dotenvy",
  "embassy-executor",
  "embassy-net",
  "embassy-sync 0.7.2",
@@ -4054,6 +4058,7 @@ dependencies = [
  "smoltcp",
  "static_cell",
  "tokio",
+ "vergen",
 ]
 
 [[package]]

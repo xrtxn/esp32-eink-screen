@@ -2,6 +2,7 @@
 name = "display-simulator"
 version = "0.1.0"
 edition = "2024"
+build = "../build.rs"
 
 [[bin]]
 name = "display-simulator"
@@ -16,3 +17,8 @@ log = "0.4.27"
 env_logger = "0.11"
 weact-studio-epd = { git = "https://github.com/xrtxn/weact-studio-epd.git", branch = "feat/4.2_support" }
 embedded-graphics-simulator = "0.8.0"
+
+[build-dependencies]
+vergen = { version = "9.0.6", features = ["build"] }
+dotenvy = { version = "0.15"}
+base64 = "0.22.1"

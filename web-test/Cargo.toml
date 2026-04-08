@@ -2,6 +2,7 @@
 name = "web-test"
 version = "0.1.0"
 edition = "2024"
+build = "../build.rs"
 
 [[bin]]
 name = "web-test"
@@ -22,4 +23,6 @@ env_logger = "0.11.9"
 fluent-uri = { version = "0.4.1" }
 
 [build-dependencies]
+vergen = { version = "9.0.6", features = ["build"] }
+dotenvy = { version = "0.15"}
 base64 = "0.22.1"
