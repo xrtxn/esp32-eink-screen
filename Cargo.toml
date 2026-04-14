@@ -114,6 +114,7 @@ sequential-storage = { version = "7.1.0", features = ["postcard"] }
 embassy-sync = "0.7.2"
 fluent-uri = { version = "0.4.1", default-features = false }
 embedded-nal-async = "0.9.0"
+nom = { version = "8.0.0", default-features = false }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

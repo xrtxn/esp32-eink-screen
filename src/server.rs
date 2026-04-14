@@ -4,8 +4,6 @@ use picoserve::AppBuilder;
 #[cfg(not(target_arch = "xtensa"))]
 use std::string::String;
 
-#[cfg(target_arch = "xtensa")]
-use crate::networking::fetch_principal_url;
 use crate::storage;
 
 const INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/credentials.html.gz"));
@@ -140,7 +138,7 @@ impl AppBuilder for AppProps {
                         )
                         .await;
                         #[cfg(not(target_arch = "xtensa"))]
-                        return fetch_domain_endpoint(body.url).await;
+                        return fetch_domain_endpoint(&body.url).await;
                     },
                 ),
             )
@@ -154,7 +152,7 @@ impl AppBuilder for AppProps {
                             .unwrap_or_default()
                             .caldav
                             .unwrap();
-                        return fetch_principal(
+                        return fetch_calendars(
                             tls_mutex,
                             dns_socket,
                             tcp_client,
@@ -165,7 +163,7 @@ impl AppBuilder for AppProps {
                         .await;
                     }
                     #[cfg(not(target_arch = "xtensa"))]
-                    return fetch_domain_endpoint(body.url).await;
+                    return fetch_domain_endpoint("example.com").await;
                 }),
             )
     }
@@ -220,7 +218,7 @@ async fn fetch_domain_endpoint(
     }
 }
 
-async fn fetch_principal(
+async fn fetch_calendars(
     #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         &'static mut mbedtls_rs::Tls<'static>,
@@ -250,13 +248,27 @@ async fn fetch_principal(
         let mut client =
             crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
 
-        crate::networking::fetch_principal_url(&mut client, body, credentials, &mut *buf_guard)
+        let res =
+            crate::networking::fetch_principal_url(&mut client, body, credentials, &mut *buf_guard)
+                .await
+                .unwrap();
+        let home = crate::networking::fetch_calendar_home_set(
+            &mut client,
+            body,
+            &res,
+            credentials,
+            &mut *buf_guard,
+        )
+        .await
+        .unwrap();
+        crate::networking::fetch_calendars(&mut client, body, &home, credentials, &mut *buf_guard)
             .await;
         todo!()
     }
     #[cfg(not(target_arch = "xtensa"))]
     {
         let _ = body;
+        let _ = credentials;
         let resp: heapless::String<{ MAX_URL_LEN }> =
             heapless::String::try_from("https://example.com/caldav").unwrap();
         Ok(picoserve::response::json::Json(EndpointResponse {

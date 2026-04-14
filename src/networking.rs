@@ -1,14 +1,18 @@
+use alloc::string::String;
+use alloc::string::ToString;
 use core::fmt::Write;
 use core::net::{SocketAddr, SocketAddrV4};
 use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::udp::PacketMetadata;
+use embedded_io_async::BufRead;
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use smoltcp::wire::DnsQueryType;
 use static_cell::StaticCell;
+use vcal_parser::calendars::CalendarData;
 
 use crate::storage::CaldavCreds;
 
@@ -344,7 +348,7 @@ pub(crate) async fn fetch_principal_url<'a>(
     origin: &str,
     credentials: &CaldavCreds,
     response_buf: &mut [u8; 8192],
-) {
+) -> Option<String> {
     const BODY: &str = r#"<d:propfind xmlns:d="DAV:">
       <d:prop>
         <d:current-user-principal />
@@ -375,5 +379,224 @@ pub(crate) async fn fetch_principal_url<'a>(
             todo!()
         }
     };
-    log::info!("Response body: {}", res);
+    parse_principal_url(res)
+}
+
+const DAV_NS: &str = "DAV:";
+const CALDAV_NS: &str = "urn:ietf:params:xml:ns:caldav";
+
+pub fn parse_principal_url(xml: &str) -> Option<String> {
+    let doc = roxmltree::Document::parse(xml).ok().unwrap();
+
+    let res = doc
+        .descendants()
+        .find(|n| n.has_tag_name((DAV_NS, "current-user-principal")))?
+        .children()
+        .find(|n| n.has_tag_name((DAV_NS, "href")))?
+        .text();
+    res.map(|f| f.to_string())
+}
+
+pub(crate) async fn fetch_calendar_home_set<'a>(
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
+    origin: &str,
+    path: &str,
+    credentials: &CaldavCreds,
+    response_buf: &mut [u8; 8192],
+) -> Option<String> {
+    const BODY: &str = r#"<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+        <d:prop>
+          <c:calendar-home-set />
+        </d:prop>
+      </d:propfind>"#;
+    let username = credentials.username.as_str();
+    let password = credentials.password.as_str();
+
+    let mut request = client
+        .request(reqwless::request::Method::PROPFIND, &origin)
+        .await
+        .unwrap()
+        .basic_auth(username, password)
+        .path(path)
+        .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
+        .body(BODY.as_bytes());
+
+    let response = request.send(response_buf).await.unwrap();
+
+    log::info!("Response status: {:?}", response.status);
+    let res = response.body().read_to_end().await.unwrap();
+
+    let res = match str::from_utf8(res) {
+        Ok(v) => v,
+        Err(_) => {
+            log::error!("Response body (hex): {:02x?}", res);
+            todo!()
+        }
+    };
+    let res = get_calendar_home_set(res);
+    log::info!("Calendar home set: {:?}", res);
+    res
+}
+
+fn get_calendar_home_set(xml: &str) -> Option<String> {
+    let doc = roxmltree::Document::parse(xml).ok()?;
+
+    let res = doc
+        .descendants()
+        .find(|n| n.has_tag_name((CALDAV_NS, "calendar-home-set")))?
+        .children()
+        .find(|n| n.has_tag_name((DAV_NS, "href")))?
+        .text()
+        .map(str::to_string);
+    res.map(|f| f.to_string())
+}
+
+pub(crate) async fn fetch_calendars<'a>(
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
+    origin: &str,
+    path: &str,
+    credentials: &CaldavCreds,
+    response_buf: &mut [u8; 8192],
+) {
+    const BODY: &str = r#"<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+        <d:prop>
+          <d:displayname />
+          <d:resourcetype />
+          <c:supported-calendar-component-set />
+        </d:prop>
+      </d:propfind>"#;
+    let username = credentials.username.as_str();
+    let password = credentials.password.as_str();
+
+    let mut request = client
+        .request(reqwless::request::Method::PROPFIND, &origin)
+        .await
+        .unwrap()
+        .basic_auth(username, password)
+        .path(path)
+        .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
+        .body(BODY.as_bytes());
+
+    let response = request.send(response_buf).await.unwrap();
+
+    log::info!("Response status: {:?}", response.status);
+    match response.body().reader() {
+        reqwless::response::BodyReader::Empty => todo!(),
+        reqwless::response::BodyReader::FixedLength(mut _flbr) => {}
+        reqwless::response::BodyReader::Chunked(mut chunked_body_reader) => {
+            let mut spill_buffer: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+            let handled_start = false;
+            let mut cal_data = CalendarData::new();
+            let mut calendars: alloc::vec::Vec<CalendarData> = alloc::vec::Vec::new();
+            loop {
+                let buf = chunked_body_reader.fill_buf().await.unwrap();
+                let len = buf.len();
+                if len == 0 {
+                    break;
+                }
+
+                let parse_slice = if spill_buffer.is_empty() {
+                    buf
+                } else {
+                    spill_buffer.extend_from_slice(buf);
+                    &spill_buffer
+                };
+
+                let mut parsed_bytes = 0;
+
+                // TODO: handle if split inside a utf-8 character
+                if let Ok(res) = core::str::from_utf8(parse_slice) {
+                    let mut current_str = res;
+
+                    if !handled_start && current_str.starts_with("<?") {
+                        match vcal_parser::calendars::parse_xml_version(current_str) {
+                            Ok((rest, _)) => {
+                                parsed_bytes += current_str.len() - rest.len();
+                                current_str = rest;
+                            }
+                            Err(nom::Err::Incomplete(_)) => {}
+                            Err(e) => log::error!("Failed parsing XML version: {:?}", e),
+                        }
+                    }
+
+                    let mut next_href = false;
+                    let mut next_name = false;
+                    loop {
+                        if current_str.is_empty() {
+                            break;
+                        }
+
+                        match vcal_parser::calendars::parse_xml_event(current_str) {
+                            Ok((remaining, res)) => {
+                                use vcal_parser::calendars::XmlEvent;
+                                use vcal_parser::calendars::{DNamespace, Namespace};
+
+                                match res {
+                                    XmlEvent::Open(Namespace::D(DNamespace::DisplayName)) => {
+                                        next_name = true
+                                    }
+                                    XmlEvent::Open(Namespace::D(DNamespace::Href)) => {
+                                        next_href = true
+                                    }
+                                    XmlEvent::Close(Namespace::D(DNamespace::Response)) => {
+                                        calendars.push(core::mem::replace(
+                                            &mut cal_data,
+                                            CalendarData::new(),
+                                        ));
+                                    }
+                                    XmlEvent::Close(Namespace::D(DNamespace::Multistatus)) => {
+                                        if remaining.trim().is_empty() {
+                                            log::info!("Finished parsing all calendar data");
+                                        } else {
+                                            log::warn!("Leftover data: {}", remaining);
+                                        }
+                                        break;
+                                    }
+                                    XmlEvent::Text(text) => {
+                                        if next_name {
+                                            cal_data.display_name = Some(text);
+                                            next_name = false;
+                                        } else if next_href {
+                                            cal_data.href = Some(text);
+                                            next_href = false;
+                                        }
+                                    }
+                                    _ => (),
+                                }
+                                parsed_bytes += current_str.len() - remaining.len();
+                                current_str = remaining;
+                            }
+                            Err(nom::Err::Incomplete(_)) => {
+                                log::warn!(
+                                    "Incomplete chunked calendar data, waiting for more data to arrive"
+                                );
+                                break;
+                            }
+                            Err(nom::Err::Error(err)) => {
+                                log::error!("Failed to parse chunked calendar data: {:?}", err);
+                                break;
+                            }
+                            Err(nom::Err::Failure(fail)) => {
+                                log::error!("Failed to parse chunked calendar data: {:?}", fail);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if spill_buffer.is_empty() {
+                    // Copy the remaining unparsed bytes into the spill buffer
+                    if parsed_bytes < len {
+                        spill_buffer.extend_from_slice(&buf[parsed_bytes..]);
+                    }
+                } else {
+                    spill_buffer.drain(..parsed_bytes);
+                }
+
+                chunked_body_reader.consume(len);
+            }
+            log::info!("Parsed calendars: {:?}", calendars);
+        }
+        reqwless::response::BodyReader::ToEnd(_) => todo!(),
+    }
 }

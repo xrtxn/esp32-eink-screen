@@ -1699,6 +1699,7 @@ dependencies = [
  "jiff",
  "log",
  "mbedtls-rs",
+ "nom 8.0.0",
  "picoserve",
  "portable-atomic",
  "postcard",

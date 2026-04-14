@@ -49,9 +49,6 @@
     "command": "cargo",
     "args": ["-Zbuild-std=", "test", "--target", "x86_64-unknown-linux-gnu"],
     "cwd": "$ZED_WORKTREE_ROOT/vcal-parser",
-    "env": {
-      "CARGO_TARGET_DIR": "target-host",
-    },
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "tags": ["rust-test"],

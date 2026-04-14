@@ -15,6 +15,7 @@ use static_cell::StaticCell;
 use crate::storage::WifiCreds;
 
 pub const AP_IP_ADDR: [u8; 4] = [192, 168, 0, 1];
+const WIFI_RETRY_DELAY_MS: u64 = 300;
 
 static NETWORK_STACK: StaticCell<embassy_net::StackResources<5>> = StaticCell::new();
 static DHCP_UDP_BUFFERS: StaticCell<UdpBuffers<1>> = StaticCell::new();
@@ -33,7 +34,7 @@ pub async fn connection(
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             log::warn!("Disconnected, retrying...");
-            Timer::after(Duration::from_millis(1000)).await
+            Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await
         }
 
         if !matches!(controller.is_started(), Ok(true)) {
@@ -52,7 +53,7 @@ pub async fn connection(
             Ok(_) => log::info!("Wifi connected!"),
             Err(e) => {
                 log::error!("Failed to connect to wifi: {e:?}");
-                Timer::after(Duration::from_millis(1000)).await
+                Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await
             }
         }
     }
