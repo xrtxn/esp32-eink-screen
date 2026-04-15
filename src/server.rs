@@ -1,5 +1,7 @@
 #[cfg(target_arch = "xtensa")]
 use alloc::string::String;
+#[cfg(target_arch = "xtensa")]
+use alloc::vec::Vec;
 use picoserve::AppBuilder;
 #[cfg(not(target_arch = "xtensa"))]
 use std::string::String;
@@ -238,10 +240,7 @@ async fn fetch_calendars(
         &'static mut [u8; 8192],
     >,
     credentials: &storage::CaldavCreds,
-) -> Result<
-    picoserve::response::json::Json<alloc::vec::Vec<CalendarData>>,
-    picoserve::response::StatusCode,
-> {
+) -> Result<picoserve::response::json::Json<Vec<CalendarData>>, picoserve::response::StatusCode> {
     #[cfg(target_arch = "xtensa")]
     {
         let mut buf_guard = req_buffer_mutex.lock().await;
@@ -276,9 +275,10 @@ async fn fetch_calendars(
         let _ = credentials;
         let resp: heapless::String<{ MAX_URL_LEN }> =
             heapless::String::try_from("https://example.com/caldav").unwrap();
-        Ok(picoserve::response::json::Json(EndpointResponse {
-            endpoint: resp,
-        }))
+        Ok(picoserve::response::json::Json(vec![CalendarData::new(
+            Some("Test Calendar".to_string()),
+            Some("https://example.com/caldav/calendars/test/".to_string()),
+        )]))
     }
 }
 
@@ -363,7 +363,7 @@ mod xtensa {
         start_read_request: Duration::from_secs(5),
         persistent_start_read_request: Duration::from_secs(1),
         read_request: Duration::from_secs(3),
-        write: Duration::from_secs(3),
+        write: Duration::from_secs(5),
     })
     .close_connection_after_response();
 

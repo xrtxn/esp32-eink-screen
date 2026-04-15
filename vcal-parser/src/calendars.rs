@@ -26,6 +26,10 @@ pub struct CalendarData {
 }
 
 impl CalendarData {
+    pub fn new(href: Option<String>, display_name: Option<String>) -> Self {
+        Self { href, display_name }
+    }
+
     pub fn reset(&mut self) {
         self.href = None;
         self.display_name = None;

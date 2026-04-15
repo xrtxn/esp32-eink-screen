@@ -21,6 +21,7 @@ static_cell = "2.1.1"
 smoltcp = { version = "0.12.0", default-features = false, features = ["std", "proto-ipv4", "medium-ethernet", "socket-tcp"] }
 env_logger = "0.11.9"
 fluent-uri = { version = "0.4.1" }
+vcal-parser = { path = "../vcal-parser" }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

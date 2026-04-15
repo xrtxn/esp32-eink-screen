@@ -4060,6 +4060,7 @@ dependencies = [
  "smoltcp",
  "static_cell",
  "tokio",
+ "vcal-parser",
  "vergen",
 ]
 

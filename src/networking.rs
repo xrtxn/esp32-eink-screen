@@ -11,7 +11,7 @@ use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use smoltcp::wire::DnsQueryType;
 use static_cell::StaticCell;
-use vcal_parser::calendars::CalendarData;
+pub use vcal_parser::calendars::CalendarData;
 
 use crate::storage::CaldavCreds;
 
