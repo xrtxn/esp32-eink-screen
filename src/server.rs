@@ -356,9 +356,16 @@ pub enum NetworkStatus {
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
     use super::{AppProps, WEB_TASK_POOL_SIZE};
+    use embassy_time::Duration;
     use static_cell::StaticCell;
 
-    static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
+    static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
+        start_read_request: Duration::from_secs(5),
+        persistent_start_read_request: Duration::from_secs(1),
+        read_request: Duration::from_secs(3),
+        write: Duration::from_secs(3),
+    })
+    .close_connection_after_response();
 
     static TCP_RX_BUFFERS: [StaticCell<[u8; 1024]>; WEB_TASK_POOL_SIZE] =
         [const { StaticCell::new() }; WEB_TASK_POOL_SIZE];
