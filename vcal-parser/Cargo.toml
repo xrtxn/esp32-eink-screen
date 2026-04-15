@@ -8,3 +8,4 @@ nom = { version = "8", default-features = false, features = ["alloc"] }
 jiff = { version = "0.2", default-features = false, features = ["alloc"] }
 heapless = "0.9"
 log = "0.4"
+serde = { version = "1.0.*", default-features = false, features = ["derive", "alloc"] }

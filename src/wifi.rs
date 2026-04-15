@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 use edge_nal::UdpBind;
 use edge_nal_embassy::{Udp, UdpBuffers};
-use embassy_net::Runner;
+use embassy_net::{DhcpConfig, Runner};
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -34,7 +34,7 @@ pub async fn connection(
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             log::warn!("Disconnected, retrying...");
-            Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await
+            Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
         }
 
         if !matches!(controller.is_started(), Ok(true)) {
@@ -50,10 +50,10 @@ pub async fn connection(
         }
 
         match controller.connect_async().await {
-            Ok(_) => log::info!("Wifi connected!"),
+            Ok(()) => log::info!("Wifi connected!"),
             Err(e) => {
                 log::error!("Failed to connect to wifi: {e:?}");
-                Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await
+                Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
             }
         }
     }
@@ -61,7 +61,7 @@ pub async fn connection(
 
 #[embassy_executor::task]
 pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
-    runner.run().await
+    runner.run().await;
 }
 
 #[embassy_executor::task]
@@ -86,7 +86,7 @@ pub async fn dhcp_server_task(stack: embassy_net::Stack<'static>) {
         if let Err(e) =
             edge_dhcp::io::server::run(&mut server, &server_options, &mut socket, &mut buf).await
         {
-            log::error!("DHCP server error: {:?}", e);
+            log::error!("DHCP server error: {e:?}");
         }
     }
 }
@@ -132,6 +132,7 @@ pub fn start_ap(
 
     let wifi_interface = interfaces.ap;
 
+    #[allow(clippy::default_trait_access)]
     let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
         address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::from_octets(AP_IP_ADDR), 24),
         gateway: Some(embassy_net::Ipv4Address::from_octets(AP_IP_ADDR)),
@@ -177,7 +178,7 @@ pub fn start_con(
 
     let wifi_interface = interfaces.sta;
 
-    let config = embassy_net::Config::dhcpv4(Default::default());
+    let config = embassy_net::Config::dhcpv4(DhcpConfig::default());
 
     let _trng_source = esp_hal::rng::TrngSource::new(rng_per, adc1);
 

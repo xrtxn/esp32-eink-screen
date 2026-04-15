@@ -11,7 +11,7 @@ use alloc::string::{String, ToString};
 #[cfg(test)]
 use std::println;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum XmlEvent {
     Open(Namespace),
     Close(Namespace),
@@ -19,20 +19,13 @@ pub enum XmlEvent {
     Text(String),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(serde::Serialize, PartialEq, Default, Clone, Debug)]
 pub struct CalendarData {
     pub href: Option<String>,
     pub display_name: Option<String>,
 }
 
 impl CalendarData {
-    pub const fn new() -> Self {
-        CalendarData {
-            href: None,
-            display_name: None,
-        }
-    }
-
     pub fn reset(&mut self) {
         self.href = None;
         self.display_name = None;

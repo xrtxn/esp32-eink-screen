@@ -1,0 +1,128 @@
+use vcal_parser::calendars::CalendarData;
+
+pub(crate) async fn parse_body<B>(
+    chunked_body_reader: &mut reqwless::response::BodyReader<B>,
+) -> Result<alloc::vec::Vec<CalendarData>, reqwless::Error>
+where
+    B: embedded_io_async::Read + embedded_io_async::BufRead,
+{
+    if let reqwless::response::BodyReader::Empty = chunked_body_reader {
+        return Ok(alloc::vec::Vec::new());
+    }
+    let mut spill_buffer: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+    let handled_start = false;
+    let mut cal_data = CalendarData::default();
+    let mut calendars: alloc::vec::Vec<CalendarData> = alloc::vec::Vec::new();
+    loop {
+        let buf = embedded_io_async::BufRead::fill_buf(chunked_body_reader)
+            .await
+            .unwrap();
+        let len = buf.len();
+        if len == 0 {
+            break;
+        }
+
+        let parse_slice = if spill_buffer.is_empty() {
+            buf
+        } else {
+            spill_buffer.extend_from_slice(buf);
+            &spill_buffer
+        };
+
+        let mut parsed_bytes = 0;
+
+        // TODO: handle if split inside a utf-8 character
+        if let Ok(res) = core::str::from_utf8(parse_slice) {
+            let mut current_str = res;
+
+            if !handled_start && current_str.starts_with("<?") {
+                match vcal_parser::calendars::parse_xml_version(current_str) {
+                    Ok((rest, _)) => {
+                        parsed_bytes += current_str.len() - rest.len();
+                        current_str = rest;
+                    }
+                    Err(nom::Err::Incomplete(_)) => {}
+                    Err(e) => log::error!("Failed parsing XML version: {:?}", e),
+                }
+            }
+
+            let mut next_href = false;
+            let mut next_name = false;
+            loop {
+                if current_str.is_empty() {
+                    break;
+                }
+
+                match vcal_parser::calendars::parse_xml_event(current_str) {
+                    Ok((remaining, res)) => {
+                        use vcal_parser::calendars::XmlEvent;
+                        use vcal_parser::calendars::{DNamespace, Namespace};
+
+                        match res {
+                            XmlEvent::Open(Namespace::D(DNamespace::DisplayName)) => {
+                                next_name = true
+                            }
+                            XmlEvent::Open(Namespace::D(DNamespace::Href)) => next_href = true,
+                            XmlEvent::Close(Namespace::D(DNamespace::Response)) => {
+                                if cal_data.href.is_none() {
+                                    log::warn!("Calendar response without href, skipping");
+                                } else if cal_data.display_name.is_none() {
+                                    log::warn!("Calendar response without display name, skipping");
+                                } else {
+                                    calendars.push(core::mem::take(&mut cal_data));
+                                }
+                            }
+                            XmlEvent::Close(Namespace::D(DNamespace::Multistatus)) => {
+                                if remaining.trim().is_empty() {
+                                    log::info!("Finished parsing all calendar data");
+                                } else {
+                                    log::warn!("Leftover data: {}", remaining);
+                                }
+                                break;
+                            }
+                            XmlEvent::Text(text) => {
+                                if next_name {
+                                    cal_data.display_name = Some(text);
+                                    next_name = false;
+                                } else if next_href {
+                                    cal_data.href = Some(text);
+                                    next_href = false;
+                                }
+                            }
+                            _ => (),
+                        }
+                        parsed_bytes += current_str.len() - remaining.len();
+                        current_str = remaining;
+                    }
+                    Err(nom::Err::Incomplete(_)) => {
+                        log::warn!(
+                            "Incomplete chunked calendar data, waiting for more data to arrive"
+                        );
+                        break;
+                    }
+                    Err(nom::Err::Error(err)) => {
+                        log::error!("Failed to parse chunked calendar data: {:?}", err);
+                        break;
+                    }
+                    Err(nom::Err::Failure(fail)) => {
+                        log::error!("Failed to parse chunked calendar data: {:?}", fail);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if spill_buffer.is_empty() {
+            // Copy the remaining unparsed bytes into the spill buffer
+            if parsed_bytes < len {
+                spill_buffer.extend_from_slice(&buf[parsed_bytes..]);
+            }
+        } else {
+            spill_buffer.drain(..parsed_bytes);
+        }
+
+        // Consume all remaining bytes, it only fetches new data if we consumed everything that was previously fetched
+        embedded_io_async::BufRead::consume(chunked_body_reader, len);
+    }
+    Ok(calendars)
+}

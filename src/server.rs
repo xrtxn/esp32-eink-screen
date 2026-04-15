@@ -3,6 +3,7 @@ use alloc::string::String;
 use picoserve::AppBuilder;
 #[cfg(not(target_arch = "xtensa"))]
 use std::string::String;
+use vcal_parser::calendars::CalendarData;
 
 use crate::storage;
 
@@ -63,7 +64,7 @@ impl AppBuilder for AppProps {
         let req_buffer_mutex = &*REQ_MUTEX.init(embassy_sync::mutex::Mutex::new(req_buffer));
 
         picoserve::Router::new()
-            .route("/", picoserve::routing::get(move || config_page_handler()))
+            .route("/", picoserve::routing::get(config_page_handler))
             .route(
                 "/api/config/wifi",
                 picoserve::routing::post(
@@ -102,7 +103,7 @@ impl AppBuilder for AppProps {
                     move |picoserve::extract::Json(resp_caldav): picoserve::extract::Json<
                         storage::DisplayConfig,
                     >| async move {
-                        log::info!("Received config change request: {:?}", resp_caldav);
+                        log::info!("Received config change request: {resp_caldav:?}");
 
                         #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
@@ -120,7 +121,7 @@ impl AppBuilder for AppProps {
             )
             .route(
                 "/display_config",
-                picoserve::routing::get(move || display_config_page_handler()),
+                picoserve::routing::get(display_config_page_handler),
             )
             .route(
                 "/api/config/caldav/endpoint",
@@ -199,7 +200,7 @@ async fn fetch_domain_endpoint(
             crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
 
         let endpoint =
-            crate::networking::fetch_domain_endpoint(&mut client, body, &mut *buf_guard).await;
+            crate::networking::fetch_domain_endpoint(&mut client, body, *buf_guard).await;
         match endpoint {
             Some(url) => Ok(picoserve::response::json::Json(EndpointResponse {
                 endpoint: url,
@@ -237,7 +238,10 @@ async fn fetch_calendars(
         &'static mut [u8; 8192],
     >,
     credentials: &storage::CaldavCreds,
-) -> Result<picoserve::response::json::Json<EndpointResponse>, picoserve::response::StatusCode> {
+) -> Result<
+    picoserve::response::json::Json<alloc::vec::Vec<CalendarData>>,
+    picoserve::response::StatusCode,
+> {
     #[cfg(target_arch = "xtensa")]
     {
         let mut buf_guard = req_buffer_mutex.lock().await;
@@ -249,7 +253,7 @@ async fn fetch_calendars(
             crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
 
         let res =
-            crate::networking::fetch_principal_url(&mut client, body, credentials, &mut *buf_guard)
+            crate::networking::fetch_principal_url(&mut client, body, credentials, *buf_guard)
                 .await
                 .unwrap();
         let home = crate::networking::fetch_calendar_home_set(
@@ -257,13 +261,14 @@ async fn fetch_calendars(
             body,
             &res,
             credentials,
-            &mut *buf_guard,
+            *buf_guard,
         )
         .await
         .unwrap();
-        crate::networking::fetch_calendars(&mut client, body, &home, credentials, &mut *buf_guard)
-            .await;
-        todo!()
+        let calendars =
+            crate::networking::fetch_calendars(&mut client, body, &home, credentials, *buf_guard)
+                .await;
+        Ok(picoserve::response::json::Json(calendars))
     }
     #[cfg(not(target_arch = "xtensa"))]
     {
@@ -316,16 +321,16 @@ async fn save_caldav_handler(
     >,
     picoserve::extract::Json(resp_caldav): picoserve::extract::Json<storage::CaldavCreds>,
 ) -> impl picoserve::response::IntoResponse {
-    log::info!("Received config change request: {:?}", resp_caldav);
+    log::info!("Received config change request: {resp_caldav:?}");
 
     let url = fluent_uri::Uri::parse(resp_caldav.url.as_str());
     match url {
         Ok(res) => log::info!("Parsed URL: {}", res.as_str()),
         Err(err) => {
-            log::error!("Failed to parse URL: {}", err);
+            log::error!("Failed to parse URL: {err}");
             return picoserve::response::StatusCode::BAD_REQUEST;
         }
-    };
+    }
 
     #[cfg(target_arch = "xtensa")]
     let mut nvs = storage::read_config(flash).await.unwrap_or_default();
@@ -338,7 +343,7 @@ async fn save_caldav_handler(
     storage::write_config(flash, nvs).await;
     #[cfg(not(target_arch = "xtensa"))]
     storage::write_config(nvs).await;
-    return picoserve::response::StatusCode::OK;
+    picoserve::response::StatusCode::OK
 }
 
 #[derive(serde::Serialize, PartialEq, Clone, Copy)]
@@ -350,7 +355,7 @@ pub enum NetworkStatus {
 
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
-    use super::*;
+    use super::{AppProps, WEB_TASK_POOL_SIZE};
     use static_cell::StaticCell;
 
     static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();

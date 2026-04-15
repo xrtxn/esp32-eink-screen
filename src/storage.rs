@@ -58,7 +58,7 @@ pub use not_xtensa::*;
 
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
-    use super::*;
+    use super::NvsConfig;
     use embassy_embedded_hal::adapter::BlockingAsync;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::mutex::Mutex;
@@ -102,7 +102,7 @@ mod xtensa {
             .ok()
             .flatten();
 
-        log::info!("Read config: {:?}", nvs_config);
+        log::info!("Read config: {nvs_config:?}");
         nvs_config
     }
 

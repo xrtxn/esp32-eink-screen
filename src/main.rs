@@ -6,11 +6,13 @@
     reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
     holding buffers for the duration of a data transfer."
 )]
+#![allow(clippy::pedantic)]
 
 mod display;
 mod hardware;
 mod init;
 mod networking;
+mod process;
 mod server;
 mod storage;
 mod wifi;
@@ -177,25 +179,21 @@ async fn main(spawner: Spawner) {
     } else {
         let ncreds = stored_config.clone();
 
-        let (net_stack, trng, network_status) = match stored_config.clone() {
-            Some(config) => match config.wifi {
-                Some(creds) => {
-                    let (net_stack, trng) =
-                        wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1);
-                    (net_stack, trng, NetworkStatus::Network)
-                }
-                None => {
-                    let (net_stack, trng) =
-                        wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
-                    (net_stack, trng, NetworkStatus::AccessPoint)
-                }
-            },
-            None => {
+        let (net_stack, trng, network_status) = if let Some(config) = stored_config.clone() {
+            if let Some(creds) = config.wifi {
+                let (net_stack, trng) =
+                    wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1);
+                (net_stack, trng, NetworkStatus::Network)
+            } else {
                 let (net_stack, trng) =
                     wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
                 (net_stack, trng, NetworkStatus::AccessPoint)
             }
+        } else {
+            let (net_stack, trng) = wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
+            (net_stack, trng, NetworkStatus::AccessPoint)
         };
+
         (net_stack, trng, ncreds, network_status)
     };
 
@@ -208,29 +206,24 @@ async fn main(spawner: Spawner) {
 
         let to = embassy_time::with_timeout(timeout, net_stack.wait_config_up()).await;
 
-        match to {
-            Ok(_) => {
-                if boot_type == BootType::Display {
-                    NETWORK_FAIL_COUNT.store(0, core::sync::atomic::Ordering::Relaxed);
-                }
+        if to.is_ok() {
+            if boot_type == BootType::Display {
+                NETWORK_FAIL_COUNT.store(0, core::sync::atomic::Ordering::Relaxed);
             }
-            Err(_) => {
-                let old_count = NETWORK_FAIL_COUNT.load(core::sync::atomic::Ordering::Relaxed);
+        } else {
+            let old_count = NETWORK_FAIL_COUNT.load(core::sync::atomic::Ordering::Relaxed);
 
-                let should_reset = match boot_type {
-                    BootType::Display if old_count <= NETWORK_FAIL_LIMIT => {
-                        go_to_deep_sleep(&mut rtc)
-                    }
-                    BootType::Display => true,
-                    _ => network_status == NetworkStatus::Network,
-                };
+            let should_reset = match boot_type {
+                BootType::Display if old_count <= NETWORK_FAIL_LIMIT => go_to_deep_sleep(&mut rtc),
+                BootType::Display => true,
+                BootType::Config => network_status == NetworkStatus::Network,
+            };
 
-                if should_reset {
-                    let mut config = stored_config.unwrap();
-                    config.wifi = None;
-                    storage::write_config(flash, config).await;
-                    esp_hal::system::software_reset();
-                }
+            if should_reset {
+                let mut config = stored_config.unwrap();
+                config.wifi = None;
+                storage::write_config(flash, config).await;
+                esp_hal::system::software_reset();
             }
         }
     }
@@ -265,26 +258,28 @@ async fn main(spawner: Spawner) {
             .await;
         }
         BootType::Config => {
-            let text;
-            if network_status == NetworkStatus::Network {
-                text = alloc::format!(
+            let text = if network_status == NetworkStatus::Network {
+                alloc::format!(
                     "Connected to Wi-Fi!\nSSID: {}\nIP: {}\n",
                     ncreds.as_ref().unwrap().wifi.as_ref().unwrap().ssid,
                     ip_config.address.address()
-                );
+                )
             } else {
-                text = alloc::format!(
+                alloc::format!(
                     "Access point created!\nSSID: {}\nPassword: {}\nIp: {}",
                     env!("AP_SSID"),
                     env!("AP_PASS"),
                     ip_config.address.address()
-                );
-            }
+                )
+            };
 
-            join(run_config_mode(spawner, net_stack, flash, trng), async {
-                display::draw_config(&mut display, text.as_str()).await;
-                driver.full_update(&display).await.unwrap();
-            })
+            join(
+                async { run_config_mode(spawner, net_stack, flash, trng) },
+                async {
+                    display::draw_config(&mut display, text.as_str());
+                    driver.full_update(&display).await.unwrap();
+                },
+            )
             .await;
         }
     }
@@ -307,12 +302,12 @@ async fn run_display_mode(
         crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
     ));
     let events =
-        networking::get_events(tls.reference(), &dns_socket, &tcp_client, rtc, &caldav).await;
+        networking::get_events(tls.reference(), dns_socket, tcp_client, rtc, &caldav).await;
 
     display::write_to_screen(display, driver, events, rtc).await;
 }
 
-async fn run_config_mode(
+fn run_config_mode(
     spawner: Spawner,
     net_stack: embassy_net::Stack<'static>,
     flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,

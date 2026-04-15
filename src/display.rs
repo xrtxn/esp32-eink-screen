@@ -246,12 +246,7 @@ pub(crate) fn draw_event<D>(
     if end.hour() < start_display_hour as i8
         || start.hour() > (start_display_hour + DISPLAY_HOURS) as i8
     {
-        log::warn!(
-            "Event '{}' is out of display bounds ({}-{}), skipping",
-            text,
-            start,
-            end
-        );
+        log::warn!("Event '{text}' is out of display bounds ({start}-{end}), skipping",);
         return;
     }
 
@@ -330,7 +325,7 @@ pub const fn extend_rectangle(rec: &mut Rectangle) {
 }
 
 #[allow(dead_code)]
-pub fn draw_days<D>(display: &mut D, current_day: &jiff::civil::Weekday, count: u8)
+pub fn draw_days<D>(display: &mut D, current_day: jiff::civil::Weekday, count: u8)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
@@ -355,7 +350,7 @@ where
         };
         x_offset += day_text.chars().count() as i32 * EVENT_FONT.character_size.width as i32 + 15;
         let pos = Point::new(starting_x + x_offset, y as i32);
-        info!("Drawing day '{}' at position {:?}", day_text, pos);
+        info!("Drawing day '{day_text}' at position {pos:?}");
 
         Text::with_baseline(
             day_text,
@@ -368,7 +363,7 @@ where
     }
 }
 
-pub(crate) async fn draw_config<D>(display: &mut D, text: &str)
+pub(crate) fn draw_config<D>(display: &mut D, text: &str)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
@@ -396,7 +391,7 @@ pub use not_xtensa::*;
 
 #[cfg(target_arch = "xtensa")]
 pub mod xtensa {
-    use super::*;
+    use super::{DISPLAY_HOURS, draw_event};
     use display_interface::AsyncWriteOnlyDataCommand;
     use embedded_hal::digital::OutputPin as EhalOutputPin;
     use embedded_hal_async::{delay::DelayNs, digital::Wait};

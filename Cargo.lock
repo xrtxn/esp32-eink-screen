@@ -3865,6 +3865,7 @@ dependencies = [
  "jiff",
  "log",
  "nom 8.0.0",
+ "serde",
 ]
 
 [[package]]
