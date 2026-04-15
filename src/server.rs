@@ -166,7 +166,7 @@ impl AppBuilder for AppProps {
                         .await;
                     }
                     #[cfg(not(target_arch = "xtensa"))]
-                    return fetch_domain_endpoint("example.com").await;
+                    return fetch_calendars().await;
                 }),
             )
     }
@@ -234,12 +234,11 @@ async fn fetch_calendars(
         4096,
     >,
     #[cfg(target_arch = "xtensa")] body: &str,
-    #[cfg(not(target_arch = "xtensa"))] body: &str,
     #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         &'static mut [u8; 8192],
     >,
-    credentials: &storage::CaldavCreds,
+    #[cfg(target_arch = "xtensa")] credentials: &storage::CaldavCreds,
 ) -> Result<picoserve::response::json::Json<Vec<CalendarData>>, picoserve::response::StatusCode> {
     #[cfg(target_arch = "xtensa")]
     {
@@ -271,13 +270,10 @@ async fn fetch_calendars(
     }
     #[cfg(not(target_arch = "xtensa"))]
     {
-        let _ = body;
-        let _ = credentials;
-        let resp: heapless::String<{ MAX_URL_LEN }> =
-            heapless::String::try_from("https://example.com/caldav").unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(5));
         Ok(picoserve::response::json::Json(vec![CalendarData::new(
-            Some("Test Calendar".to_string()),
             Some("https://example.com/caldav/calendars/test/".to_string()),
+            Some("Test Calendar".to_string()),
         )]))
     }
 }
