@@ -23,7 +23,6 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use weact_studio_epd::graphics::Display420BlackWhite;
 
-use crate::networking::{MAX_DAILY_EVENTS, MAX_VCALENDAR_BYTES};
 use crate::server::{NetworkStatus, WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
 use esp_storage::FlashStorage;
@@ -335,20 +334,4 @@ fn run_config_mode(
     for task_id in 0..WEB_TASK_POOL_SIZE {
         spawner.must_spawn(web_task(task_id, net_stack, app));
     }
-}
-
-pub(crate) fn extract_calendar_data(
-    data: &str,
-) -> heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS> {
-    let parsed = roxmltree::Document::parse(data).unwrap();
-    parsed
-        .descendants()
-        .filter(|n| n.has_tag_name("calendar-data"))
-        .filter_map(|e| {
-            e.text().map(|t| {
-                heapless::String::try_from(t)
-                    .expect("Unable to store calendar data into heapless string")
-            })
-        })
-        .collect()
 }

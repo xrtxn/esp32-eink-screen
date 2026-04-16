@@ -24,13 +24,7 @@ pub const CERT_STORE: &core::ffi::CStr = {
         Err(_) => panic!("cert contains interior null bytes or is missing terminator"),
     }
 };
-const CALENDAR_ID: &str = "e4a2c806-b52b-43a3-828b-d97ec82f698b";
-
-// This is one event every half hour
-pub const MAX_DAILY_EVENTS: usize = 4;
-pub const MAX_VCALENDAR_BYTES: usize = 2000;
-
-const TOTAL_VCAL_BUFFER: usize = MAX_DAILY_EVENTS * MAX_VCALENDAR_BYTES;
+const CALENDAR_ID: &str = "szakdoga-teszt";
 
 /// This is a boolean value to whether the initial NTP sync occurred
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
@@ -44,11 +38,7 @@ static RX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 static TX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
 static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 
-static CAL_XML_BUF: StaticCell<heapless::String<TOTAL_VCAL_BUFFER>> = StaticCell::new();
 pub static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
-static CAL_STRINGS: StaticCell<
-    heapless::Vec<heapless::String<MAX_VCALENDAR_BYTES>, MAX_DAILY_EVENTS>,
-> = StaticCell::new();
 
 #[derive(Copy, Clone, Default)]
 struct NtpTimestamp {
@@ -136,13 +126,13 @@ pub fn init_https_client<'a>(
     HttpClient::new_with_tls(tcp_client, dns_socket, tls_config)
 }
 
-pub async fn network_req(
+pub async fn calendar_data_req(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     date: jiff::civil::Date,
-    cal_xml_buf: &mut heapless::String<TOTAL_VCAL_BUFFER>,
     req_buffer: &mut [u8; 8192],
     creds: &CaldavCreds,
-) {
+) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
+    log::info!("Making calendar request for date: {date}");
     let mut fmt_date = heapless::String::<8>::new();
 
     let _ = write!(
@@ -229,29 +219,20 @@ pub async fn network_req(
     let response = request.send(req_buffer).await.unwrap();
     log::debug!("Response status: {:?}", response.status);
 
-    let res = response.body().read_to_end().await.unwrap();
-
-    let Ok(res) = str::from_utf8(res) else {
-        log::error!("Response body (hex): {res:02x?}");
-        todo!()
-    };
-    cal_xml_buf.clear();
-    cal_xml_buf
-        .push_str(res)
-        .expect("Response too large for calendar buffer");
+    let mut reader = response.body().reader();
+    let cal = crate::process::parse_body_cal(&mut reader).await.unwrap();
+    log::info!("Parsed calendar data: {:?}", cal);
+    cal
 }
 
-pub(crate) type VcalsType<'a> = heapless::Vec<vcal_parser::VCalendar<'a>, MAX_DAILY_EVENTS>;
-
 // todo pass http client
-pub(crate) async fn get_events<'a>(
+pub(crate) async fn get_events(
     tls_ref: reqwless::TlsReference<'_>,
-    dns_socket: &'a DnsSocket<'_>,
+    dns_socket: &'_ DnsSocket<'_>,
     tcp: &TcpClient<'_, 1, 4096, 4096>,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     credentials: &CaldavCreds,
-) -> VcalsType<'a> {
-    let cal_xml_buf = CAL_XML_BUF.init(heapless::String::new());
+) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
     let req_buffer = REQ_BUFFER.init([0u8; 8192]);
 
     let time_from_rtc =
@@ -259,21 +240,23 @@ pub(crate) async fn get_events<'a>(
 
     let mut client = init_https_client(tcp, dns_socket, tls_ref);
 
+    let mut resp = alloc::vec![];
     let mut success = false;
     for tries in 1..=3 {
         req_buffer.fill(0);
-        let req = crate::networking::network_req(
+        let req = crate::networking::calendar_data_req(
             &mut client,
             time_from_rtc.to_zoned(jiff::tz::TimeZone::UTC).date(),
-            cal_xml_buf,
             req_buffer,
             credentials,
         );
-        if let Ok(()) = embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
+        if let Ok(res) =
+            embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
         {
+            resp = res;
             success = true;
             break;
-        }
+        };
         log::warn!("Failed to get calendar data on attempt {tries}, retrying...");
     }
 
@@ -281,24 +264,7 @@ pub(crate) async fn get_events<'a>(
         log::error!("Failed after 3 attempts, entering deep sleep");
         crate::hardware::go_to_deep_sleep(rtc);
     }
-
-    log::trace!("Received calendar data len: {}", cal_xml_buf.len());
-    log::trace!("data: {cal_xml_buf}");
-    let cal_strings = CAL_STRINGS.init(crate::extract_calendar_data(cal_xml_buf));
-    // todo do unfolding
-    let events: VcalsType<'static> = cal_strings
-        .iter()
-        .map(|s| vcal_parser::parse_vcalendar(s).unwrap().1)
-        .collect();
-
-    log::trace!(
-        "Parsed: {:?}",
-        events
-            .iter()
-            .map(|e| &e.events.first().unwrap().summary)
-            .collect::<heapless::Vec<_, MAX_DAILY_EVENTS>>()
-    );
-    events
+    resp
 }
 
 pub async fn fetch_domain_endpoint(

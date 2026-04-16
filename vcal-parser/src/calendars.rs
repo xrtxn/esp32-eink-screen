@@ -8,8 +8,6 @@ use nom::{
 };
 
 use alloc::string::{String, ToString};
-#[cfg(test)]
-use std::println;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum XmlEvent {
@@ -54,6 +52,7 @@ pub enum DNamespace {
     Status,
     ResourceType,
     Collection,
+    GetEtag,
     Other(String),
 }
 
@@ -62,6 +61,7 @@ pub enum CalNamespace {
     SupportedCalendarComponentSet,
     Comp,
     Calendar,
+    CalendarData,
     Other(String),
 }
 
@@ -81,12 +81,14 @@ fn classify_namespace(ns: &str, name: &str) -> Namespace {
             "status" => DNamespace::Status,
             "resourcetype" => DNamespace::ResourceType,
             "collection" => DNamespace::Collection,
+            "getetag" => DNamespace::GetEtag,
             other => DNamespace::Other(other.to_string()),
         }),
         "cal" => Namespace::Cal(match name {
             "supported-calendar-component-set" => CalNamespace::SupportedCalendarComponentSet,
             "comp" => CalNamespace::Comp,
             "calendar" => CalNamespace::Calendar,
+            "calendar-data" => CalNamespace::CalendarData,
             other => CalNamespace::Other(other.to_string()),
         }),
         _ => Namespace::Other(ns.to_string(), name.to_string()),
@@ -153,7 +155,6 @@ pub fn parse_xml_event(input: &str) -> IResult<&str, XmlEvent> {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     use super::*;
 
     #[test]

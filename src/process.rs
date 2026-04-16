@@ -1,12 +1,15 @@
-use vcal_parser::calendars::CalendarData;
+use vcal_parser::{
+    calendars::CalendarData,
+    vevent::{VEventData, parse_date},
+};
 
 pub(crate) async fn parse_body<B>(
-    chunked_body_reader: &mut reqwless::response::BodyReader<B>,
+    body_reader: &mut reqwless::response::BodyReader<B>,
 ) -> Result<alloc::vec::Vec<CalendarData>, reqwless::Error>
 where
     B: embedded_io_async::Read + embedded_io_async::BufRead,
 {
-    if let reqwless::response::BodyReader::Empty = chunked_body_reader {
+    if let reqwless::response::BodyReader::Empty = body_reader {
         return Ok(alloc::vec::Vec::new());
     }
     let mut spill_buffer: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
@@ -14,7 +17,7 @@ where
     let mut cal_data = CalendarData::default();
     let mut calendars: alloc::vec::Vec<CalendarData> = alloc::vec::Vec::new();
     loop {
-        let buf = embedded_io_async::BufRead::fill_buf(chunked_body_reader)
+        let buf = embedded_io_async::BufRead::fill_buf(body_reader)
             .await
             .unwrap();
         let len = buf.len();
@@ -32,9 +35,7 @@ where
         let mut parsed_bytes = 0;
 
         // TODO: handle if split inside a utf-8 character
-        if let Ok(res) = core::str::from_utf8(parse_slice) {
-            let mut current_str = res;
-
+        if let Ok(mut current_str) = core::str::from_utf8(parse_slice) {
             if !handled_start && current_str.starts_with("<?") {
                 match vcal_parser::calendars::parse_xml_version(current_str) {
                     Ok((rest, _)) => {
@@ -54,11 +55,11 @@ where
                 }
 
                 match vcal_parser::calendars::parse_xml_event(current_str) {
-                    Ok((remaining, res)) => {
+                    Ok((remaining, event)) => {
                         use vcal_parser::calendars::XmlEvent;
                         use vcal_parser::calendars::{DNamespace, Namespace};
 
-                        match res {
+                        match event {
                             XmlEvent::Open(Namespace::D(DNamespace::DisplayName)) => {
                                 next_name = true
                             }
@@ -122,7 +123,163 @@ where
         }
 
         // Consume all remaining bytes, it only fetches new data if we consumed everything that was previously fetched
-        embedded_io_async::BufRead::consume(chunked_body_reader, len);
+        embedded_io_async::BufRead::consume(body_reader, len);
     }
     Ok(calendars)
+}
+
+pub(crate) async fn parse_body_cal<B>(
+    body_reader: &mut reqwless::response::BodyReader<B>,
+) -> Result<alloc::vec::Vec<VEventData>, reqwless::Error>
+where
+    B: embedded_io_async::Read + embedded_io_async::BufRead,
+{
+    if let reqwless::response::BodyReader::Empty = body_reader {
+        return Ok(alloc::vec::Vec::new());
+    }
+    let mut spill_buffer: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+    let handled_start = false;
+    let mut cal_data = VEventData::default();
+    let mut events: alloc::vec::Vec<VEventData> = alloc::vec::Vec::new();
+    loop {
+        let buf = embedded_io_async::BufRead::fill_buf(body_reader)
+            .await
+            .unwrap();
+        let len = buf.len();
+        if len == 0 {
+            break;
+        }
+
+        let parse_slice = if spill_buffer.is_empty() {
+            buf
+        } else {
+            spill_buffer.extend_from_slice(buf);
+            &spill_buffer
+        };
+
+        let mut parsed_bytes = 0;
+
+        // TODO: handle if split inside a utf-8 character
+        if let Ok(mut current_str) = core::str::from_utf8(parse_slice) {
+            if !handled_start && current_str.starts_with("<?") {
+                match vcal_parser::calendars::parse_xml_version(current_str) {
+                    Ok((rest, _)) => {
+                        parsed_bytes += current_str.len() - rest.len();
+                        current_str = rest;
+                    }
+                    Err(nom::Err::Incomplete(_)) => {}
+                    Err(e) => log::error!("Failed parsing XML version: {:?}", e),
+                }
+            }
+
+            let mut in_calendar_data = false;
+            loop {
+                if current_str.is_empty() {
+                    break;
+                }
+
+                log::info!(
+                    "Parsing chunked calendar data, current length: {}",
+                    current_str.len()
+                );
+                match vcal_parser::calendars::parse_xml_event(current_str) {
+                    Ok((remaining, event)) => {
+                        use vcal_parser::calendars::XmlEvent;
+                        use vcal_parser::calendars::{CalNamespace, Namespace};
+
+                        match event {
+                            XmlEvent::Open(Namespace::Cal(CalNamespace::CalendarData)) => {
+                                in_calendar_data = true;
+                            }
+                            XmlEvent::Close(Namespace::Cal(CalNamespace::CalendarData)) => {
+                                in_calendar_data = false;
+                            }
+                            XmlEvent::Text(text) => {
+                                let mut txt = text.as_str();
+                                if in_calendar_data {
+                                    if text.is_empty() {
+                                        break;
+                                    }
+                                    loop {
+                                        match vcal_parser::vevent::parse_vcal_event(txt) {
+                                            Ok((rem, vevent)) => {
+                                                if let Some(vevent) = vevent {
+                                                    match vevent {
+                                                        vcal_parser::vevent::VcalEvent::Begin(
+                                                            _,
+                                                        ) => {
+                                                            cal_data = VEventData::default();
+                                                        }
+                                                        vcal_parser::vevent::VcalEvent::End(_) => {
+                                                            events.push(core::mem::take(
+                                                                &mut cal_data,
+                                                            ));
+                                                            break;
+                                                        }
+                                                        vcal_parser::vevent::VcalEvent::Summary(
+                                                            ref summary,
+                                                        ) => {
+                                                            cal_data.summary =
+                                                                Some(summary.clone());
+                                                        }
+                                                        vcal_parser::vevent::VcalEvent::DtStart(
+                                                            ref dtstart,
+                                                        ) => {
+                                                            cal_data.dtstart =
+                                                                Some(parse_date(dtstart.as_str()));
+                                                        }
+                                                        vcal_parser::vevent::VcalEvent::DtEnd(
+                                                            ref dtend,
+                                                        ) => {
+                                                            cal_data.dtend =
+                                                                Some(parse_date(dtend.as_str()));
+                                                        }
+                                                    }
+                                                }
+                                                txt = rem;
+                                            }
+                                            Err(e) => {
+                                                log::error!("Failed to parse VEVENT data: {:?}", e)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => (),
+                        }
+                        current_str = remaining;
+                    }
+                    Err(nom::Err::Incomplete(_)) => {
+                        log::warn!("Incomplete chunked vcal data, waiting for more data to arrive");
+                        break;
+                    }
+                    Err(nom::Err::Error(err)) => {
+                        log::error!("Failed to parse chunked vcal data: {:?}", err);
+                        break;
+                    }
+                    Err(nom::Err::Failure(fail)) => {
+                        log::error!("Failed to parse chunked vcal data: {:?}", fail);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if spill_buffer.is_empty() {
+            // Copy the remaining unparsed bytes into the spill buffer
+            if parsed_bytes < len {
+                spill_buffer.extend_from_slice(&buf[parsed_bytes..]);
+            }
+        } else {
+            spill_buffer.drain(..parsed_bytes);
+        }
+
+        // Consume all remaining bytes, it only fetches new data if we consumed everything that was previously fetched
+        embedded_io_async::BufRead::consume(body_reader, len);
+    }
+    log::info!(
+        "Finished parsing calendar events, total events parsed: {:?}",
+        events
+    );
+    Ok(events)
 }
