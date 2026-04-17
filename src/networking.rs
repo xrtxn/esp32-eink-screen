@@ -6,6 +6,7 @@ use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::udp::PacketMetadata;
+use embassy_sync::mutex::Mutex;
 use esp_backtrace as _;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
@@ -24,7 +25,7 @@ pub const CERT_STORE: &core::ffi::CStr = {
         Err(_) => panic!("cert contains interior null bytes or is missing terminator"),
     }
 };
-const CALENDAR_ID: &str = "szakdoga-teszt";
+const CALENDAR_IDS: &[&str] = &["szakdoga-teszt", "e4a2c806-b52b-43a3-828b-d97ec82f698b"];
 
 /// This is a boolean value to whether the initial NTP sync occurred
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
@@ -191,22 +192,37 @@ pub async fn calendar_data_req(
     )
     .unwrap();
 
-    let path: heapless::String<{ crate::server::MAX_PATH_LEN }> = heapless::format!(
-        "{}/calendars/{}/{}/",
-        url.path().as_str(),
-        username,
-        CALENDAR_ID
-    )
-    .unwrap();
+    let mut all_cals = alloc::vec::Vec::new();
+    for cal_id in CALENDAR_IDS {
+        let path: heapless::String<{ crate::server::MAX_PATH_LEN }> =
+            heapless::format!("{}/calendars/{}/{}/", url.path().as_str(), username, cal_id)
+                .unwrap();
 
-    log::debug!(
-        "Request path: {}/{}/{}/{}/",
-        origin,
-        url.path().as_str(),
-        username,
-        CALENDAR_ID
-    );
+        let vec = req(
+            client,
+            &origin,
+            &path,
+            username,
+            password,
+            body.as_bytes(),
+            req_buffer,
+        )
+        .await;
+        all_cals.extend(vec);
+    }
 
+    all_cals
+}
+
+async fn req(
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
+    origin: &str,
+    path: &str,
+    username: &str,
+    password: &str,
+    body: &[u8],
+    req_buffer: &mut [u8; 8192],
+) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
     let mut request = client
         .request(reqwless::request::Method::REPORT, &origin)
         .await
@@ -214,7 +230,7 @@ pub async fn calendar_data_req(
         .basic_auth(username, password)
         .path(&path)
         .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
-        .body(body.as_bytes());
+        .body(body);
 
     let response = request.send(req_buffer).await.unwrap();
     log::debug!("Response status: {:?}", response.status);

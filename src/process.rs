@@ -178,10 +178,6 @@ where
                     break;
                 }
 
-                log::info!(
-                    "Parsing chunked calendar data, current length: {}",
-                    current_str.len()
-                );
                 match vcal_parser::calendars::parse_xml_event(current_str) {
                     Ok((remaining, event)) => {
                         use vcal_parser::calendars::XmlEvent;
