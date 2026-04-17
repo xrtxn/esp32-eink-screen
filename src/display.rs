@@ -1,10 +1,10 @@
+use defmt::info;
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
 use embedded_graphics::prelude::{Drawable, Primitive};
 use embedded_graphics::primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
 use embedded_graphics::text::Text;
 use heapless::format as hformat;
-use log::info;
 use weact_studio_epd::Color as EpdColor;
 
 pub const DISPLAY_HOURS: u8 = 8;
@@ -142,7 +142,7 @@ where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    log::info!("Calendar sync time: {}", time);
+    defmt::info!("Calendar sync time: {}", defmt::Debug2Format(&time));
     let fmt_time: heapless::String<11> =
         hformat!("Sync: {:02}:{:02}", time.hour(), time.minute()).unwrap();
 
@@ -211,9 +211,9 @@ where
     if time.hour() < start_display_hour as i8
         || time.hour() > (start_display_hour + DISPLAY_HOURS) as i8
     {
-        log::warn!(
+        defmt::warn!(
             "Current time {} is out of display bounds ({}-{}), skipping time ticker",
-            time,
+            defmt::Debug2Format(&time),
             start_display_hour,
             start_display_hour + DISPLAY_HOURS
         );
@@ -246,7 +246,12 @@ pub(crate) fn draw_event<D>(
     if end.hour() < start_display_hour as i8
         || start.hour() > (start_display_hour + DISPLAY_HOURS) as i8
     {
-        log::warn!("Event '{text}' is out of display bounds ({start}-{end}), skipping",);
+        defmt::warn!(
+            "Event '{}' is out of display bounds ({}-{}), skipping",
+            text,
+            defmt::Debug2Format(&start),
+            defmt::Debug2Format(&end)
+        );
         return;
     }
 
@@ -350,7 +355,11 @@ where
         };
         x_offset += day_text.chars().count() as i32 * EVENT_FONT.character_size.width as i32 + 15;
         let pos = Point::new(starting_x + x_offset, y as i32);
-        info!("Drawing day '{day_text}' at position {pos:?}");
+        info!(
+            "Drawing day '{}' at position {:?}",
+            day_text,
+            defmt::Debug2Format(&pos)
+        );
 
         Text::with_baseline(
             day_text,
@@ -451,7 +460,7 @@ pub mod not_xtensa {
     use super::*;
 
     pub(crate) async fn write_to_screen() {
-        log::info!("Mock writing to screen");
+        defmt::info!("Mock writing to screen");
     }
 }
 

@@ -3,10 +3,12 @@ runner = "espflash flash --monitor --chip esp32s3 --baud 921600 --partition-tabl
 
 [env]
 ESP_LOG="info,esp32_thesis=trace"
+DEFMT_LOG="info,esp32_thesis=trace"
 
 [build]
 rustflags = [
   "-C", "link-arg=-nostartfiles",
+  "-C", "link-arg=-Tdefmt.x",
 ]
 
 target = "xtensa-esp32s3-none-elf"

@@ -43,7 +43,9 @@ where
                         current_str = rest;
                     }
                     Err(nom::Err::Incomplete(_)) => {}
-                    Err(e) => log::error!("Failed parsing XML version: {:?}", e),
+                    Err(e) => {
+                        defmt::error!("Failed parsing XML version: {}", defmt::Debug2Format(&e))
+                    }
                 }
             }
 
@@ -66,18 +68,20 @@ where
                             XmlEvent::Open(Namespace::D(DNamespace::Href)) => next_href = true,
                             XmlEvent::Close(Namespace::D(DNamespace::Response)) => {
                                 if cal_data.href.is_none() {
-                                    log::warn!("Calendar response without href, skipping");
+                                    defmt::warn!("Calendar response without href, skipping");
                                 } else if cal_data.display_name.is_none() {
-                                    log::warn!("Calendar response without display name, skipping");
+                                    defmt::warn!(
+                                        "Calendar response without display name, skipping"
+                                    );
                                 } else {
                                     calendars.push(core::mem::take(&mut cal_data));
                                 }
                             }
                             XmlEvent::Close(Namespace::D(DNamespace::Multistatus)) => {
                                 if remaining.trim().is_empty() {
-                                    log::info!("Finished parsing all calendar data");
+                                    defmt::info!("Finished parsing all calendar data");
                                 } else {
-                                    log::warn!("Leftover data: {}", remaining);
+                                    defmt::warn!("Leftover data: {}", remaining);
                                 }
                                 break;
                             }
@@ -96,17 +100,23 @@ where
                         current_str = remaining;
                     }
                     Err(nom::Err::Incomplete(_)) => {
-                        log::warn!(
+                        defmt::warn!(
                             "Incomplete chunked calendar data, waiting for more data to arrive"
                         );
                         break;
                     }
                     Err(nom::Err::Error(err)) => {
-                        log::error!("Failed to parse chunked calendar data: {:?}", err);
+                        defmt::error!(
+                            "Failed to parse chunked calendar data: {}",
+                            defmt::Debug2Format(&err)
+                        );
                         break;
                     }
                     Err(nom::Err::Failure(fail)) => {
-                        log::error!("Failed to parse chunked calendar data: {:?}", fail);
+                        defmt::error!(
+                            "Failed to parse chunked calendar data: {}",
+                            defmt::Debug2Format(&fail)
+                        );
                         break;
                     }
                 }
@@ -168,7 +178,9 @@ where
                         current_str = rest;
                     }
                     Err(nom::Err::Incomplete(_)) => {}
-                    Err(e) => log::error!("Failed parsing XML version: {:?}", e),
+                    Err(e) => {
+                        defmt::error!("Failed parsing XML version: {}", defmt::Debug2Format(&e))
+                    }
                 }
             }
 
@@ -235,7 +247,10 @@ where
                                                 txt = rem;
                                             }
                                             Err(e) => {
-                                                log::error!("Failed to parse VEVENT data: {:?}", e)
+                                                defmt::error!(
+                                                    "Failed to parse VEVENT data: {}",
+                                                    defmt::Debug2Format(&e)
+                                                )
                                             }
                                         }
                                     }
@@ -246,15 +261,23 @@ where
                         current_str = remaining;
                     }
                     Err(nom::Err::Incomplete(_)) => {
-                        log::warn!("Incomplete chunked vcal data, waiting for more data to arrive");
+                        defmt::warn!(
+                            "Incomplete chunked vcal data, waiting for more data to arrive"
+                        );
                         break;
                     }
                     Err(nom::Err::Error(err)) => {
-                        log::error!("Failed to parse chunked vcal data: {:?}", err);
+                        defmt::error!(
+                            "Failed to parse chunked vcal data: {}",
+                            defmt::Debug2Format(&err)
+                        );
                         break;
                     }
                     Err(nom::Err::Failure(fail)) => {
-                        log::error!("Failed to parse chunked vcal data: {:?}", fail);
+                        defmt::error!(
+                            "Failed to parse chunked vcal data: {}",
+                            defmt::Debug2Format(&fail)
+                        );
                         break;
                     }
                 }
@@ -273,9 +296,9 @@ where
         // Consume all remaining bytes, it only fetches new data if we consumed everything that was previously fetched
         embedded_io_async::BufRead::consume(body_reader, len);
     }
-    log::info!(
+    defmt::info!(
         "Finished parsing calendar events, total events parsed: {:?}",
-        events
+        events.len()
     );
     Ok(events)
 }

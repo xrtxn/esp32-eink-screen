@@ -28,12 +28,12 @@ pub async fn connection(
     ssid: heapless::String<32>,
     pass: heapless::String<32>,
 ) {
-    log::info!("Device capabilities: {:?}", controller.capabilities());
+    defmt::info!("Device capabilities: {:?}", controller.capabilities());
     loop {
         if esp_radio::wifi::sta_state() == WifiStaState::Connected {
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
-            log::warn!("Disconnected, retrying...");
+            defmt::warn!("Disconnected, retrying...");
             Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
         }
 
@@ -44,15 +44,15 @@ pub async fn connection(
                     .with_password(pass.to_string()),
             );
             controller.set_config(&station_config).unwrap();
-            log::info!("Starting wifi");
+            defmt::info!("Starting wifi");
             controller.start_async().await.unwrap();
-            log::info!("Wifi started!");
+            defmt::info!("Wifi started!");
         }
 
         match controller.connect_async().await {
-            Ok(()) => log::info!("Wifi connected!"),
+            Ok(()) => defmt::info!("Wifi connected!"),
             Err(e) => {
-                log::error!("Failed to connect to wifi: {e:?}");
+                defmt::error!("Failed to connect to wifi: {:?}", e);
                 Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
             }
         }
@@ -86,14 +86,14 @@ pub async fn dhcp_server_task(stack: embassy_net::Stack<'static>) {
         if let Err(e) =
             edge_dhcp::io::server::run(&mut server, &server_options, &mut socket, &mut buf).await
         {
-            log::error!("DHCP server error: {e:?}");
+            defmt::error!("DHCP server error: {:?}", e);
         }
     }
 }
 
 #[embassy_executor::task]
 pub async fn ap_task(mut controller: WifiController<'static>) {
-    log::info!("Device capabilities: {:?}", controller.capabilities());
+    defmt::info!("Device capabilities: {:?}", controller.capabilities());
     loop {
         if !matches!(controller.is_started(), Ok(true)) {
             let ap_config = ModeConfig::AccessPoint(
@@ -104,12 +104,12 @@ pub async fn ap_task(mut controller: WifiController<'static>) {
                     .with_password(alloc::string::String::from(env!("AP_PASS"))),
             );
             controller.set_config(&ap_config).unwrap();
-            log::info!("Starting AP");
+            defmt::info!("Starting AP");
             controller.start_async().await.unwrap();
-            log::info!("AP started!");
+            defmt::info!("AP started!");
         }
         controller.wait_for_event(WifiEvent::ApStop).await;
-        log::warn!("AP stopped, restarting...");
+        defmt::warn!("AP stopped, restarting...");
         Timer::after(Duration::from_millis(1000)).await;
     }
 }

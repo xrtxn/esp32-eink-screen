@@ -105,8 +105,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
-    esp_println::logger::init_logger_from_env();
-
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -115,7 +113,7 @@ async fn main(spawner: Spawner) {
     hardware::apply_wakeup_boot_type();
 
     let prev_boot_count = DISPLAY_SLEEP_COUNT.load(core::sync::atomic::Ordering::Relaxed);
-    log::info!("Successful sleep wake count: {}", prev_boot_count + 1);
+    defmt::info!("Successful sleep wake count: {}", prev_boot_count + 1);
 
     let boot_type = BootType::get();
 
@@ -152,7 +150,7 @@ async fn main(spawner: Spawner) {
             _ => {
                 #[cfg(debug_assertions)]
                 {
-                    log::warn!("No config found; using compile-time credentials (debug build)");
+                    defmt::warn!("No config found; using compile-time credentials (debug build)");
                     let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
                     NvsConfig::new(Some(wifi_creds))
                 }
@@ -164,7 +162,7 @@ async fn main(spawner: Spawner) {
         };
 
         if config.wifi.is_none() || config.caldav.is_none() {
-            log::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
+            defmt::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
             BootType::set(BootType::Config);
             esp_hal::system::software_reset();
         }
@@ -228,9 +226,9 @@ async fn main(spawner: Spawner) {
     }
 
     let ip_config = net_stack.config_v4().unwrap();
-    log::info!("Network connected with IP address: {}", ip_config.address);
+    defmt::info!("Network connected with IP address: {}", ip_config.address);
 
-    log::info!("Microcontroller initialized");
+    defmt::info!("Microcontroller initialized");
 
     let (mut display, mut driver) = init::init_display(
         peripherals.GPIO12,

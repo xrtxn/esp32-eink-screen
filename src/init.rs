@@ -39,16 +39,16 @@ pub(crate) async fn init_display(
     let busy = Input::new(busy_pin, InputConfig::default().with_pull(Pull::None));
     let cs = Output::new(cs_pin, Level::High, OutputConfig::default());
 
-    log::info!("Initializing SPI Device...");
+    defmt::info!("Initializing SPI Device...");
     let spi_device = ExclusiveDevice::new(spi_bus, cs, Delay).expect("SPI device initialize error");
     let spi_interface = SPIInterface::new(spi_device, dc);
 
-    log::info!("Initializing EPD...");
+    defmt::info!("Initializing EPD...");
     let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, Delay);
     let mut display = Display420BlackWhite::new();
     // set it to be longer not wider
     display.set_rotation(DisplayRotation::Rotate270);
     driver.init().await.unwrap();
-    log::info!("EPD initialized!");
+    defmt::info!("EPD initialized!");
     (display, driver)
 }

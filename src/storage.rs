@@ -15,7 +15,7 @@ impl NvsConfig {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Clone, Debug)]
 pub struct WifiCreds {
     pub ssid: heapless::String<32>,
     pub password: heapless::String<32>,
@@ -30,14 +30,14 @@ impl WifiCreds {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Default, Debug, Clone)]
 pub struct CaldavCreds {
     pub url: heapless::String<128>,
     pub username: heapless::String<32>,
     pub password: heapless::String<32>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Debug, Clone)]
 pub struct DisplayConfig {
     pub displayed_hours: u8,
 }
@@ -102,7 +102,6 @@ mod xtensa {
             .ok()
             .flatten();
 
-        log::info!("Read config: {nvs_config:?}");
         nvs_config
     }
 
@@ -126,7 +125,7 @@ mod xtensa {
             .await
             .unwrap();
 
-        log::info!("Config written to flash");
+        defmt::info!("Config written to flash");
     }
 }
 
@@ -139,6 +138,6 @@ mod not_xtensa {
     }
 
     pub async fn write_config(config: NvsConfig) {
-        log::info!("Mock writing config: {:?}", config);
+        defmt::info!("Mock writing config: {:?}", config);
     }
 }
