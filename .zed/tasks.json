@@ -65,7 +65,7 @@
   {
     "label": "Run web server locally",
     "command": "cargo",
-    "args": ["run"],
+    "args": ["-Zbuild-std=", "run", "--target", "x86_64-unknown-linux-gnu"],
     "cwd": "$ZED_WORKTREE_ROOT/web-test",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,

@@ -1,4 +1,4 @@
-#[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Default, Debug, Clone)]
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
     pub caldav: Option<CaldavCreds>,
