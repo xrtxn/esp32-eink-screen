@@ -7,6 +7,8 @@ use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_net::udp::PacketMetadata;
 use esp_backtrace as _;
+use jiff::tz;
+use jiff::tz::TimeZone;
 use reqwless::client::{HttpClient, TlsConfig};
 use reqwless::request::RequestBuilder;
 use smoltcp::wire::DnsQueryType;
@@ -15,6 +17,8 @@ pub use vcal_parser::calendars::CalendarData;
 
 use crate::storage::CaldavCreds;
 
+const UTC_OFFSET_HOURS: i8 = 2;
+pub const USER_TIMEZONE: TimeZone = TimeZone::fixed(tz::offset(UTC_OFFSET_HOURS));
 pub const CERT_STORE: &core::ffi::CStr = {
     // add missing null byte compile time
     let s = concat!(include_str!("../certs/cert-mix.pem"), "\0");
@@ -126,7 +130,7 @@ pub fn init_https_client<'a>(
 
 pub async fn calendar_data_req(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
-    date: jiff::civil::Date,
+    date: &jiff::Zoned,
     req_buffer: &mut [u8; 8192],
     creds: &CaldavCreds,
     calendar_ids: &[String],
@@ -135,39 +139,62 @@ pub async fn calendar_data_req(
         "Making calendar request for date: {}",
         defmt::Debug2Format(&date)
     );
-    let mut fmt_date = heapless::String::<8>::new();
+    let start_zoned = date
+        .datetime()
+        .date()
+        .to_zoned(date.time_zone().clone())
+        .unwrap();
+    let end_zoned = start_zoned.checked_add(jiff::Span::new().days(1)).unwrap();
 
+    let start_utc = start_zoned.with_time_zone(TimeZone::UTC).datetime();
+    let end_utc = end_zoned.with_time_zone(TimeZone::UTC).datetime();
+
+    let mut start_fmt = heapless::String::<16>::new();
     let _ = write!(
-        fmt_date,
-        "{}{:02}{:02}",
-        date.year(),
-        date.month() as u8,
-        date.day()
+        start_fmt,
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+        start_utc.year(),
+        start_utc.month(),
+        start_utc.day(),
+        start_utc.hour(),
+        start_utc.minute(),
+        start_utc.second()
     );
 
-    // todo get date and time based on user timezone, caldav only accepts utc time
-    // also limit to a few hours
+    let mut end_fmt = heapless::String::<16>::new();
+    let _ = write!(
+        end_fmt,
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+        end_utc.year(),
+        end_utc.month(),
+        end_utc.day(),
+        end_utc.hour(),
+        end_utc.minute(),
+        end_utc.second()
+    );
+
+    // make static
     let body: heapless::String<554> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
     <d:prop>
         <d:getetag/>
         <c:calendar-data>
-            <c:expand start="{}T000000Z" end="{}T235959Z"/>
+            <c:expand start="{}" end="{}"/>
         </c:calendar-data>
     </d:prop>
     <c:filter>
         <c:comp-filter name="VCALENDAR">
             <c:comp-filter name="VEVENT">
-                <c:time-range start="{}T000000Z" end="{}T235959Z"/>
+                <c:time-range start="{}" end="{}"/>
             </c:comp-filter>
         </c:comp-filter>
     </c:filter>
 </c:calendar-query>"#,
-        fmt_date,
-        fmt_date,
-        fmt_date,
-        fmt_date
+        start_fmt,
+        end_fmt,
+        start_fmt,
+        end_fmt
     )
     .unwrap();
 
@@ -262,6 +289,7 @@ pub(crate) async fn get_events(
 
     let time_from_rtc =
         jiff::Timestamp::from_second(rtc.current_time_us() as i64 / 1_000_000).unwrap();
+    let tzed = time_from_rtc.to_zoned(USER_TIMEZONE);
 
     let mut client = init_https_client(tcp, dns_socket, tls_ref);
 
@@ -271,7 +299,7 @@ pub(crate) async fn get_events(
         req_buffer.fill(0);
         let req = crate::networking::calendar_data_req(
             &mut client,
-            time_from_rtc.to_zoned(jiff::tz::TimeZone::UTC).date(),
+            &tzed,
             req_buffer,
             credentials,
             calendar_ids,

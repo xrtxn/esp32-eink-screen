@@ -247,12 +247,31 @@ pub(crate) fn draw_event<D>(
     end: &jiff::Zoned,
     text: &str,
     start_display_hour: u8,
+    today: &jiff::civil::Date,
 ) where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    if end.hour() < start_display_hour as i8
-        || start.hour() > (start_display_hour + get_display_hours()) as i8
+    let start_mins_from_midnight = if start.date() < *today {
+        0
+    } else if start.date() > *today {
+        return;
+    } else {
+        start.hour() as i32 * 60 + start.minute() as i32
+    };
+
+    let end_mins_from_midnight = if end.date() < *today {
+        return;
+    } else if end.date() > *today {
+        24 * 60
+    } else {
+        end.hour() as i32 * 60 + end.minute() as i32
+    };
+
+    let display_start_mins = start_display_hour as i32 * 60;
+    let display_end_mins = (start_display_hour as i32 + get_display_hours() as i32) * 60;
+
+    if end_mins_from_midnight <= display_start_mins || start_mins_from_midnight >= display_end_mins
     {
         defmt::warn!(
             "Event '{}' is out of display bounds ({}-{}), skipping",
@@ -265,11 +284,11 @@ pub(crate) fn draw_event<D>(
 
     let x = START_POS;
     let y = calculate_start_height(
-        date_to_mins(start).saturating_sub(start_display_hour as u16 * 60),
+        (start_mins_from_midnight - display_start_mins).max(0) as u16,
         start_display_hour,
     );
     let mut end_y = calculate_end_height(
-        date_to_mins(end).saturating_sub(start_display_hour as u16 * 60),
+        (end_mins_from_midnight - display_start_mins).max(0) as u16,
         start_display_hour,
     )
     .clamp(
@@ -450,6 +469,7 @@ pub mod xtensa {
                 &end_dt,
                 &event.summary.clone().unwrap_or("No summary".to_string()),
                 start_display_hour,
+                &time.date(),
             );
         }
         #[cfg(debug_assertions)]
