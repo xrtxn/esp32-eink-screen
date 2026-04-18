@@ -12,7 +12,7 @@ mod display;
 mod hardware;
 mod init;
 mod networking;
-mod process;
+mod parsing;
 mod server;
 mod storage;
 mod wifi;
@@ -144,6 +144,23 @@ async fn main(spawner: Spawner) {
 
     spawner.must_spawn(hardware::button_task(button));
     let stored_config = storage::read_config(flash).await;
+
+    // 4 is a debug value
+    let mut sync_calendars = alloc::vec::Vec::with_capacity(4);
+
+    if let Some(config) = &stored_config {
+        if let Some(display_config) = &config.display {
+            crate::display::DISPLAY_HOURS.store(
+                display_config.displayed_hours,
+                core::sync::atomic::Ordering::Relaxed,
+            );
+            // todo: improve this
+            sync_calendars.extend(display_config.calendars.clone());
+        } else {
+            crate::display::DISPLAY_HOURS.store(8, core::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     let (net_stack, trng, ncreds, network_status) = if boot_type == BootType::Display {
         let config = match stored_config.clone() {
             Some(config) => config,
@@ -251,6 +268,7 @@ async fn main(spawner: Spawner) {
                 &mut display,
                 &mut driver,
                 ncreds.as_ref().unwrap(),
+                &sync_calendars,
             )
             .await;
         }
@@ -289,6 +307,7 @@ async fn run_display_mode(
     display: &mut Display420BlackWhite,
     driver: &mut EpdDriver,
     config: &NvsConfig,
+    calendars: &[alloc::string::String],
 ) {
     let caldav = config.caldav.clone().unwrap();
 
@@ -298,8 +317,15 @@ async fn run_display_mode(
         net_stack,
         crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
     ));
-    let events =
-        networking::get_events(tls.reference(), dns_socket, tcp_client, rtc, &caldav).await;
+    let events = networking::get_events(
+        tls.reference(),
+        dns_socket,
+        tcp_client,
+        rtc,
+        &caldav,
+        calendars,
+    )
+    .await;
 
     display::write_to_screen(display, driver, events, rtc).await;
 }

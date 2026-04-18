@@ -1,4 +1,9 @@
-#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Default, Debug, Clone)]
+#[cfg(target_arch = "xtensa")]
+use alloc::{string::String, vec::Vec};
+#[cfg(not(target_arch = "xtensa"))]
+use std::{string::String, vec::Vec};
+
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
     pub caldav: Option<CaldavCreds>,
@@ -37,15 +42,17 @@ pub struct CaldavCreds {
     pub password: heapless::String<32>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct DisplayConfig {
     pub displayed_hours: u8,
+    pub calendars: Vec<String>,
 }
 
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
             displayed_hours: 18,
+            calendars: Vec::new(),
         }
     }
 }
@@ -138,6 +145,6 @@ mod not_xtensa {
     }
 
     pub async fn write_config(config: NvsConfig) {
-        defmt::info!("Mock writing config: {:?}", config);
+        defmt::info!("Mock writing config: {:?}", defmt::Debug2Format(&config));
     }
 }

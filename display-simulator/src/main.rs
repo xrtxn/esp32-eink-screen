@@ -40,7 +40,7 @@ fn main() {
 
     let start_display_hour: u8 = now
         .hour()
-        .clamp(0, 24 - DISPLAY_HOURS as i8)
+        .clamp(0, 24 - get_display_hours() as i8)
         .try_into()
         .unwrap();
 

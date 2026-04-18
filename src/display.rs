@@ -7,7 +7,6 @@ use embedded_graphics::text::Text;
 use heapless::format as hformat;
 use weact_studio_epd::Color as EpdColor;
 
-pub const DISPLAY_HOURS: u8 = 8;
 #[allow(dead_code)]
 pub const DISPLAY_WIDTH: u32 = 300;
 pub const DISPLAY_HEIGHT: u32 = 400;
@@ -39,6 +38,12 @@ const fn calculate_row_padding(start_hour: u8, end_hour: u8) -> i32 {
     let total_text_size = text_height * item_count;
     let remaining_space = DISPLAY_HEIGHT as i32 - EXTRA_BOTTOM_SPACE - total_text_size;
     remaining_space / (item_count)
+}
+
+pub static DISPLAY_HOURS: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(8);
+
+pub fn get_display_hours() -> u8 {
+    DISPLAY_HOURS.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 pub(crate) fn add_footer_info<D>(display: &mut D)
@@ -88,7 +93,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for hour in start_display_hour..=start_display_hour + DISPLAY_HOURS {
+    for hour in start_display_hour..=start_display_hour + get_display_hours() {
         let fmt_hour: heapless::String<5> = hformat!("{:0>2}:00", hour).unwrap();
         Text::with_baseline(
             &fmt_hour,
@@ -99,7 +104,7 @@ where
         .draw(display)
         .unwrap();
         let row_padding =
-            calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
+            calculate_row_padding(start_display_hour, start_display_hour + get_display_hours());
         exceeded_height += text_height + row_padding;
     }
     // height is at max
@@ -109,7 +114,8 @@ where
 fn calculate_start_height(start_minute: u16, start_display_hour: u8) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let row_padding = calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
+    let row_padding =
+        calculate_row_padding(start_display_hour, start_display_hour + get_display_hours());
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
@@ -120,7 +126,8 @@ fn calculate_start_height(start_minute: u16, start_display_hour: u8) -> u32 {
 fn calculate_end_height(end_minute: u16, start_display_hour: u8) -> u32 {
     let text_height = EVENT_FONT.character_size.height as i32;
 
-    let row_padding = calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
+    let row_padding =
+        calculate_row_padding(start_display_hour, start_display_hour + get_display_hours());
     let one_hour_height = text_height + row_padding;
     let one_minute = one_hour_height as f32 / 60.0;
 
@@ -181,7 +188,7 @@ where
 
     let position = display.bounding_box().top_left;
 
-    for _ in start_display_hour..=start_display_hour + DISPLAY_HOURS {
+    for _ in start_display_hour..=start_display_hour + get_display_hours() {
         let start_pos = position + Point::new(text_width * 6, exceeded_height + text_height / 2);
         let finish_pos = position
             + Point::new(
@@ -194,7 +201,7 @@ where
             .draw(display)
             .unwrap();
         let row_padding =
-            calculate_row_padding(start_display_hour, start_display_hour + DISPLAY_HOURS);
+            calculate_row_padding(start_display_hour, start_display_hour + get_display_hours());
         exceeded_height += text_height + row_padding;
     }
     // height is at max
@@ -208,14 +215,15 @@ where
     let x = START_POS;
     let end_x = START_POS + 40;
 
+    let display_hours = get_display_hours();
     if time.hour() < start_display_hour as i8
-        || time.hour() > (start_display_hour + DISPLAY_HOURS) as i8
+        || time.hour() > (start_display_hour + display_hours) as i8
     {
         defmt::warn!(
             "Current time {} is out of display bounds ({}-{}), skipping time ticker",
             defmt::Debug2Format(&time),
             start_display_hour,
-            start_display_hour + DISPLAY_HOURS
+            start_display_hour + display_hours
         );
         return;
     }
@@ -244,7 +252,7 @@ pub(crate) fn draw_event<D>(
     D::Error: core::fmt::Debug,
 {
     if end.hour() < start_display_hour as i8
-        || start.hour() > (start_display_hour + DISPLAY_HOURS) as i8
+        || start.hour() > (start_display_hour + get_display_hours()) as i8
     {
         defmt::warn!(
             "Event '{}' is out of display bounds ({}-{}), skipping",
@@ -266,7 +274,7 @@ pub(crate) fn draw_event<D>(
     )
     .clamp(
         0,
-        calculate_end_height(DISPLAY_HOURS as u16 * 60, start_display_hour),
+        calculate_end_height(get_display_hours() as u16 * 60, start_display_hour),
     );
 
     let available_height = end_y - y;
@@ -400,7 +408,7 @@ pub use not_xtensa::*;
 
 #[cfg(target_arch = "xtensa")]
 pub mod xtensa {
-    use super::{DISPLAY_HOURS, draw_event};
+    use super::draw_event;
     use alloc::string::ToString;
     use display_interface::AsyncWriteOnlyDataCommand;
     use embedded_hal::digital::OutputPin as EhalOutputPin;
@@ -425,7 +433,7 @@ pub mod xtensa {
         let time = hardware::get_time(rtc);
         let start_display_hour = time.hour() as u8;
 
-        let start_display_hour = start_display_hour.clamp(0, 24 - DISPLAY_HOURS);
+        let start_display_hour = start_display_hour.clamp(0, 24 - super::get_display_hours());
 
         crate::display::draw_time_row_header(display, start_display_hour);
         crate::display::draw_base_calendar(display, start_display_hour);

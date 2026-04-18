@@ -105,13 +105,16 @@ impl AppBuilder for AppProps {
                     move |picoserve::extract::Json(resp_caldav): picoserve::extract::Json<
                         storage::DisplayConfig,
                     >| async move {
-                        defmt::info!("Received config change request: {:?}", resp_caldav);
-
                         #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
                         #[cfg(not(target_arch = "xtensa"))]
                         let mut nvs = storage::read_config().await.unwrap_or_default();
 
+                        #[cfg(target_arch = "xtensa")]
+                        crate::display::DISPLAY_HOURS.store(
+                            resp_caldav.displayed_hours,
+                            core::sync::atomic::Ordering::Relaxed,
+                        );
                         nvs.display = Some(resp_caldav);
 
                         #[cfg(target_arch = "xtensa")]
@@ -270,7 +273,7 @@ async fn fetch_calendars(
     }
     #[cfg(not(target_arch = "xtensa"))]
     {
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(2));
         Ok(picoserve::response::json::Json(vec![CalendarData::new(
             Some("https://example.com/caldav/calendars/test/".to_string()),
             Some("Test Calendar".to_string()),

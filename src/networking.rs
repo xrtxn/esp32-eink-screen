@@ -24,8 +24,6 @@ pub const CERT_STORE: &core::ffi::CStr = {
         Err(_) => panic!("cert contains interior null bytes or is missing terminator"),
     }
 };
-const CALENDAR_IDS: &[&str] = &["szakdoga-teszt", "e4a2c806-b52b-43a3-828b-d97ec82f698b"];
-
 /// This is a boolean value to whether the initial NTP sync occurred
 #[esp_hal::ram(unstable(rtc_fast, persistent))]
 pub static INITIAL_NTP_SYNC: portable_atomic::AtomicU8 = portable_atomic::AtomicU8::new(0);
@@ -131,6 +129,7 @@ pub async fn calendar_data_req(
     date: jiff::civil::Date,
     req_buffer: &mut [u8; 8192],
     creds: &CaldavCreds,
+    calendar_ids: &[String],
 ) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
     defmt::info!(
         "Making calendar request for date: {}",
@@ -195,10 +194,17 @@ pub async fn calendar_data_req(
     .unwrap();
 
     let mut all_cals = alloc::vec::Vec::new();
-    for cal_id in CALENDAR_IDS {
+    for cal_id in calendar_ids {
         let path: heapless::String<{ crate::server::MAX_PATH_LEN }> =
-            heapless::format!("{}/calendars/{}/{}/", url.path().as_str(), username, cal_id)
-                .unwrap();
+            heapless::format!("{}calendars/{}{}", url.path().as_str(), username, cal_id).unwrap();
+
+        defmt::info!("url path: {}", url.path().as_str());
+        defmt::info!(
+            "username: {}, calendar id: {}",
+            username,
+            defmt::Display2Format(cal_id)
+        );
+        defmt::debug!("request path: {}", path);
 
         let vec = req(
             client,
@@ -238,7 +244,7 @@ async fn req(
     defmt::debug!("Response status: {:?}", response.status);
 
     let mut reader = response.body().reader();
-    let cal = crate::process::parse_body_cal(&mut reader).await.unwrap();
+    let cal = crate::parsing::parse_body_cal(&mut reader).await.unwrap();
     defmt::info!("Parsed calendar data: {:?}", defmt::Debug2Format(&cal));
     cal
 }
@@ -250,6 +256,7 @@ pub(crate) async fn get_events(
     tcp: &TcpClient<'_, 1, 4096, 4096>,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     credentials: &CaldavCreds,
+    calendar_ids: &[String],
 ) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
     let req_buffer = REQ_BUFFER.init([0u8; 8192]);
 
@@ -267,6 +274,7 @@ pub(crate) async fn get_events(
             time_from_rtc.to_zoned(jiff::tz::TimeZone::UTC).date(),
             req_buffer,
             credentials,
+            calendar_ids,
         );
         if let Ok(res) =
             embassy_time::with_timeout(embassy_time::Duration::from_secs(30), req).await
@@ -462,7 +470,7 @@ pub(crate) async fn fetch_calendars(
 
     defmt::info!("Response status: {:?}", response.status);
     let mut reader = response.body().reader();
-    let calendars = crate::process::parse_body(&mut reader).await.unwrap();
+    let calendars = crate::parsing::parse_body(&mut reader).await.unwrap();
     defmt::info!("Calendars: {:?}", defmt::Debug2Format(&calendars));
 
     calendars

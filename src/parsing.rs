@@ -85,11 +85,17 @@ where
                                 }
                                 break;
                             }
-                            XmlEvent::Text(text) => {
+                            XmlEvent::Text(mut text) => {
                                 if next_name {
                                     cal_data.display_name = Some(text);
                                     next_name = false;
                                 } else if next_href {
+                                    if let Some(idx) = text.trim_end_matches('/').rfind('/') {
+                                        text.drain(..idx);
+                                        if !text.ends_with('/') {
+                                            text.push('/');
+                                        }
+                                    }
                                     cal_data.href = Some(text);
                                     next_href = false;
                                 }

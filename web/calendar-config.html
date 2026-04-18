@@ -168,5 +168,50 @@
                 </script>
             </details>
         </div>
+        <div class="container">
+            <input
+                type="submit"
+                value="Submit"
+                id="caldav-submit"
+                onclick="sendConfigData()"
+            />
+            <script>
+                const submitButton = document.querySelector("#caldav-submit");
+                // log selected calendars
+                const sendConfigData = () => {
+                    const checkboxes = document.querySelectorAll(
+                        "#calendar-list input[type=checkbox]",
+                    );
+                    const selectedCalendars = Array.from(checkboxes)
+                        .filter((cb) => cb.checked)
+                        .map((cb) => cb.name);
+                    const displayedHours = document.querySelector(
+                        "#display-hours-range",
+                    ).value;
+                    console.log("Selected calendars:", selectedCalendars);
+                    console.log("Displayed hours:", displayedHours);
+                    try {
+                        fetch("/api/config/display", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                                displayed_hours: parseInt(displayedHours, 10),
+                                calendars: selectedCalendars,
+                            }),
+                        }).then((response) => {
+                            if (!response.ok) {
+                                throw new Error("Network response was not ok");
+                            }
+                            alert("Configuration saved successfully!");
+                        });
+                    } catch (error) {
+                        console.error("Failed to save configuration:", error);
+                        alert("Failed to save configuration.");
+                    }
+                };
+            </script>
+        </div>
     </body>
 </html>

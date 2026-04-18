@@ -15,9 +15,12 @@ use static_cell::StaticCell;
 use crate::storage::WifiCreds;
 
 pub const AP_IP_ADDR: [u8; 4] = [192, 168, 0, 1];
-const WIFI_RETRY_DELAY_MS: u64 = 300;
+const WIFI_RETRY_DELAY_MS: u64 = 100;
 
-static NETWORK_STACK: StaticCell<embassy_net::StackResources<5>> = StaticCell::new();
+const NETWORK_STACK_NUM: usize = 5;
+
+static NETWORK_STACK: StaticCell<embassy_net::StackResources<NETWORK_STACK_NUM>> =
+    StaticCell::new();
 static DHCP_UDP_BUFFERS: StaticCell<UdpBuffers<1>> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<esp_radio::Controller> = StaticCell::new();
 static TRNG: StaticCell<esp_hal::rng::Trng> = StaticCell::new();
@@ -148,7 +151,7 @@ pub fn start_ap(
     let (net_stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(embassy_net::StackResources::<5>::new()),
+        NETWORK_STACK.init(embassy_net::StackResources::<NETWORK_STACK_NUM>::new()),
         seed,
     );
 
@@ -189,7 +192,7 @@ pub fn start_con(
     let (net_stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(embassy_net::StackResources::<5>::new()),
+        NETWORK_STACK.init(embassy_net::StackResources::<NETWORK_STACK_NUM>::new()),
         seed,
     );
 
