@@ -77,7 +77,7 @@ type EpdDriver = WeActStudio420BlackWhiteDriver<
     Delay,
 >;
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(defmt::Format, PartialEq, Clone, Copy, Debug)]
 pub(crate) enum BootType {
     Display = 0,
     Config = 1,
@@ -127,6 +127,8 @@ async fn main(spawner: Spawner) {
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
 
+    defmt::debug!("Initialized flash storage");
+
     // this affects the remaining stack
     esp_alloc::heap_allocator!(size: 64 * 1024);
     // SSL needs more RAM
@@ -143,7 +145,12 @@ async fn main(spawner: Spawner) {
     let button = Input::new(button, btn_config);
 
     spawner.must_spawn(hardware::button_task(button));
+
+    defmt::debug!("Trying to read config");
+
     let stored_config = storage::read_config(flash).await;
+
+    defmt::debug!("Config read complete");
 
     // 4 is a debug value
     let mut sync_calendars = alloc::vec::Vec::with_capacity(4);
@@ -161,6 +168,8 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    defmt::info!("Boot type: {:?}", boot_type);
+
     let (net_stack, trng, ncreds, network_status) = if boot_type == BootType::Display {
         let config = match stored_config.clone() {
             Some(config) => config,
@@ -173,6 +182,7 @@ async fn main(spawner: Spawner) {
                 }
                 #[cfg(not(debug_assertions))]
                 {
+                    BootType::set(BootType::Config);
                     esp_hal::system::software_reset();
                 }
             }

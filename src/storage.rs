@@ -93,7 +93,7 @@ mod xtensa {
         flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
     ) -> Option<NvsConfig> {
         let mut borrow = flash_cell.lock().await;
-        let mut data_buffer = [0u8; 256];
+        let mut data_buffer = [0u8; 2048];
 
         let async_flash = BlockingAsync::new(&mut *borrow);
 
@@ -120,7 +120,7 @@ mod xtensa {
 
         let async_flash = BlockingAsync::new(&mut *borrow);
 
-        let mut data_buffer = [0u8; 512];
+        let mut data_buffer = [0u8; 2048];
 
         let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
             async_flash,
@@ -133,6 +133,35 @@ mod xtensa {
             .unwrap();
 
         defmt::info!("Config written to flash");
+    }
+
+    pub(crate) async fn wipe_calendars(flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>) {
+        let mut borrow = flash_cell.lock().await;
+
+        let async_flash = BlockingAsync::new(&mut *borrow);
+
+        let mut data_buffer = [0u8; 2048];
+
+        let mut l = sequential_storage::map::MapStorage::<u8, _, _>::new(
+            async_flash,
+            const { sequential_storage::map::MapConfig::new(NVS_RANGE) },
+            sequential_storage::cache::NoCache::new(),
+        );
+
+        if let Ok(Some(mut config)) = l
+            .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
+            .await
+        {
+            config.display.get_or_insert_default().calendars.clear();
+
+            l.store_item(&mut data_buffer, &CONFIG_KEY, &config)
+                .await
+                .unwrap();
+
+            defmt::info!("Calendars wiped from config");
+        } else {
+            defmt::warn!("No config found to wipe calendars from");
+        }
     }
 }
 

@@ -148,25 +148,27 @@ impl AppBuilder for AppProps {
                     },
                 ),
             )
+            // TODO: fix logic in case of bad config
             .route(
                 "/api/config/caldav/calendars",
                 picoserve::routing::get(move || async move {
                     #[cfg(target_arch = "xtensa")]
                     {
-                        let nvs = storage::read_config(flash)
-                            .await
-                            .unwrap_or_default()
-                            .caldav
-                            .unwrap();
-                        return fetch_calendars(
-                            tls_mutex,
-                            dns_socket,
-                            tcp_client,
-                            &nvs.url,
-                            req_buffer_mutex,
-                            &nvs,
-                        )
-                        .await;
+                        let nvs_opt = storage::read_config(flash).await.unwrap_or_default().caldav;
+
+                        if let Some(nvs) = nvs_opt {
+                            return fetch_calendars(
+                                tls_mutex,
+                                dns_socket,
+                                tcp_client,
+                                &nvs.url,
+                                req_buffer_mutex,
+                                &nvs,
+                            )
+                            .await;
+                        } else {
+                            return Err(picoserve::response::StatusCode::BAD_REQUEST);
+                        }
                     }
                     #[cfg(not(target_arch = "xtensa"))]
                     return fetch_calendars().await;

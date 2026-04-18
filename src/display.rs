@@ -277,7 +277,7 @@ pub(crate) fn draw_event<D>(
         calculate_end_height(get_display_hours() as u16 * 60, start_display_hour),
     );
 
-    let available_height = end_y - y;
+    let available_height = end_y.saturating_sub(y);
 
     let single_line_height = EVENT_FONT.character_size.height;
     let double_line_height = single_line_height + MINI_FONT.character_size.height;

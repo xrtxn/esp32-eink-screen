@@ -3,6 +3,7 @@ use vcal_parser::{
     vevent::{VEventData, parse_date},
 };
 
+/// The internal nom parser for calendar bodies
 pub(crate) async fn parse_body<B>(
     body_reader: &mut reqwless::response::BodyReader<B>,
 ) -> Result<alloc::vec::Vec<CalendarData>, reqwless::Error>
@@ -16,6 +17,8 @@ where
     let handled_start = false;
     let mut cal_data = CalendarData::default();
     let mut calendars: alloc::vec::Vec<CalendarData> = alloc::vec::Vec::new();
+    let mut next_href = false;
+    let mut next_name = false;
     loop {
         let buf = embedded_io_async::BufRead::fill_buf(body_reader)
             .await
@@ -36,6 +39,7 @@ where
 
         // TODO: handle if split inside a utf-8 character
         if let Ok(mut current_str) = core::str::from_utf8(parse_slice) {
+            defmt::debug!("Parsing chunked calendar data: {}", current_str);
             if !handled_start && current_str.starts_with("<?") {
                 match vcal_parser::calendars::parse_xml_version(current_str) {
                     Ok((rest, _)) => {
@@ -49,8 +53,6 @@ where
                 }
             }
 
-            let mut next_href = false;
-            let mut next_name = false;
             loop {
                 if current_str.is_empty() {
                     break;
@@ -157,6 +159,7 @@ where
     let handled_start = false;
     let mut cal_data = VEventData::default();
     let mut events: alloc::vec::Vec<VEventData> = alloc::vec::Vec::new();
+    let mut in_calendar_data = false;
     loop {
         let buf = embedded_io_async::BufRead::fill_buf(body_reader)
             .await
@@ -190,7 +193,6 @@ where
                 }
             }
 
-            let mut in_calendar_data = false;
             loop {
                 if current_str.is_empty() {
                     break;
