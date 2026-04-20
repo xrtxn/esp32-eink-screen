@@ -41,7 +41,25 @@ static RX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 static TX_META: StaticCell<[PacketMetadata; 16]> = StaticCell::new();
 static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 
-pub static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
+pub(crate) static REQ_BUFFER: StaticCell<[u8; 8192]> = StaticCell::new();
+
+#[derive(thiserror::Error, picoserve::response::ErrorWithStatusCode, Debug)]
+#[status_code(INTERNAL_SERVER_ERROR)]
+pub enum NetworkError {
+    #[error("Failed to send request: {0}")]
+    RequestError(#[from] reqwless::Error),
+    #[error("Failed to read to String")]
+    ReadError(#[from] core::str::Utf8Error),
+    #[status_code(BAD_REQUEST)]
+    #[error("Failed to parse as xml")]
+    ParsingError,
+    #[status_code(BAD_REQUEST)]
+    #[error("Failed to parse URL")]
+    WrongUrl,
+    #[status_code(UNAUTHORIZED)]
+    #[error("Invalid credentials")]
+    InvalidCredentials,
+}
 
 #[derive(Copy, Clone, Default)]
 struct NtpTimestamp {
@@ -505,4 +523,32 @@ pub(crate) async fn fetch_calendars(
     crate::defmt::info!("Calendars: {:?}", crate::defmt::Debug2Format(&calendars));
 
     calendars
+}
+
+pub(crate) async fn check_credentials(
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
+    origin: &str,
+    path: &str,
+    credentials: &CaldavCreds,
+    response_buf: &mut [u8; 8192],
+) -> Result<(), NetworkError> {
+    let username = credentials.username.as_str();
+    let password = credentials.password.as_str();
+
+    let mut request = client
+        .request(reqwless::request::Method::PROPFIND, origin)
+        .await?
+        .basic_auth(username, password)
+        .path(path)
+        .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "0")]);
+
+    let response = request.send(response_buf).await?;
+
+    crate::defmt::info!("Response status: {:?}", response.status);
+
+    if !response.status.is_successful() {
+        return Err(NetworkError::InvalidCredentials);
+    }
+
+    Ok(())
 }

@@ -113,6 +113,7 @@ fluent-uri = { version = "0.4.1", default-features = false, features = ["impl-er
 embedded-nal-async = "0.9.0"
 nom = { version = "8.0.0", default-features = false }
 defmt = { version = "1.0.1", optional = true }
+thiserror = { version = "2.0.18", default-features = false }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }

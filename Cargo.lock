@@ -1879,6 +1879,7 @@ dependencies = [
  "sntpc",
  "sntpc-net-embassy",
  "static_cell",
+ "thiserror 2.0.18",
  "vcal-parser",
  "vergen",
  "weact-studio-epd",

@@ -150,21 +150,19 @@ async fn main(spawner: Spawner) {
 
     crate::defmt::debug!("Trying to read config");
 
-    let stored_config = storage::read_config(flash).await;
+    let mut stored_config = storage::read_config(flash).await;
 
     crate::defmt::debug!("Config read complete");
 
-    // 4 is a debug value
-    let mut sync_calendars = alloc::vec::Vec::with_capacity(4);
+    let mut sync_calendars = alloc::vec::Vec::with_capacity(2);
 
-    if let Some(config) = &stored_config {
-        if let Some(display_config) = &config.display {
+    if let Some(config) = &mut stored_config {
+        if let Some(display_config) = &mut config.display {
             crate::display::DISPLAY_HOURS.store(
                 display_config.displayed_hours,
                 core::sync::atomic::Ordering::Relaxed,
             );
-            // todo: improve this
-            sync_calendars.extend(display_config.calendars.clone());
+            sync_calendars.extend(core::mem::take(&mut display_config.calendars));
         } else {
             crate::display::DISPLAY_HOURS.store(8, core::sync::atomic::Ordering::Relaxed);
         }
@@ -250,6 +248,9 @@ async fn main(spawner: Spawner) {
             if should_reset {
                 let mut config = stored_config.unwrap();
                 config.wifi = None;
+                if let Some(display_config) = &mut config.display {
+                    display_config.calendars = sync_calendars;
+                }
                 storage::write_config(flash, config).await;
                 esp_hal::system::software_reset();
             }

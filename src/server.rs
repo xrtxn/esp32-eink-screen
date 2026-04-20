@@ -22,6 +22,15 @@ pub const MAX_URL_LEN: usize = MAX_ORIGIN_LEN + MAX_PATH_LEN;
 #[cfg(target_arch = "xtensa")]
 pub use xtensa::*;
 
+#[derive(thiserror::Error, picoserve::response::ErrorWithStatusCode, Debug)]
+#[status_code(INTERNAL_SERVER_ERROR)]
+pub enum AppError {
+    #[error("Network error: {0}")]
+    Network(#[from] crate::networking::NetworkError),
+    #[error("Storage error: {0}")]
+    Storage(#[from] crate::storage::StorageError),
+}
+
 #[cfg(target_arch = "xtensa")]
 static REQ_MUTEX: static_cell::StaticCell<
     embassy_sync::mutex::Mutex<
@@ -149,30 +158,56 @@ impl AppBuilder for AppProps {
                     },
                 ),
             )
+            .route(
+                "/api/config/caldav/credentials",
+                picoserve::routing::post(
+                    move |picoserve::extract::Json(credentials): picoserve::extract::Json<
+                        storage::CaldavCreds,
+                    >| async move {
+                        #[cfg(target_arch = "xtensa")]
+                        {
+                            return check_caldav_credentials(
+                                tls_mutex,
+                                dns_socket,
+                                tcp_client,
+                                req_buffer_mutex,
+                                &credentials,
+                            )
+                            .await
+                            .map_err(AppError::Network);
+                        }
+                        #[cfg(not(target_arch = "xtensa"))]
+                        return check_caldav_credentials(&credentials)
+                            .await
+                            .map_err(AppError::Network);
+                    },
+                ),
+            )
             // TODO: fix logic in case of bad config
             .route(
                 "/api/config/caldav/calendars",
                 picoserve::routing::get(move || async move {
                     #[cfg(target_arch = "xtensa")]
                     {
-                        let nvs_opt = storage::read_config(flash).await.unwrap_or_default().caldav;
+                        let nvs = storage::read_config(flash)
+                            .await
+                            .ok_or(AppError::Storage(storage::StorageError::ReadError))?
+                            .caldav
+                            .ok_or(AppError::Storage(storage::StorageError::ReadError))?;
 
-                        if let Some(nvs) = nvs_opt {
-                            return fetch_calendars(
-                                tls_mutex,
-                                dns_socket,
-                                tcp_client,
-                                &nvs.url,
-                                req_buffer_mutex,
-                                &nvs,
-                            )
-                            .await;
-                        } else {
-                            return Err(picoserve::response::StatusCode::BAD_REQUEST);
-                        }
+                        return fetch_calendars(
+                            tls_mutex,
+                            dns_socket,
+                            tcp_client,
+                            &nvs.url,
+                            req_buffer_mutex,
+                            &nvs,
+                        )
+                        .await
+                        .map_err(AppError::Network);
                     }
                     #[cfg(not(target_arch = "xtensa"))]
-                    return fetch_calendars().await;
+                    return fetch_calendars().await.map_err(AppError::Network);
                 }),
             )
     }
@@ -245,7 +280,7 @@ async fn fetch_calendars(
         &'static mut [u8; 8192],
     >,
     #[cfg(target_arch = "xtensa")] credentials: &storage::CaldavCreds,
-) -> Result<picoserve::response::json::Json<Vec<CalendarData>>, picoserve::response::StatusCode> {
+) -> Result<picoserve::response::json::Json<Vec<CalendarData>>, crate::networking::NetworkError> {
     #[cfg(target_arch = "xtensa")]
     {
         let mut buf_guard = req_buffer_mutex.lock().await;
@@ -259,7 +294,7 @@ async fn fetch_calendars(
         let res =
             crate::networking::fetch_principal_url(&mut client, body, credentials, *buf_guard)
                 .await
-                .unwrap();
+                .ok_or(crate::networking::NetworkError::ParsingError)?;
         let home = crate::networking::fetch_calendar_home_set(
             &mut client,
             body,
@@ -268,7 +303,7 @@ async fn fetch_calendars(
             *buf_guard,
         )
         .await
-        .unwrap();
+        .ok_or(crate::networking::NetworkError::ParsingError)?;
         let calendars =
             crate::networking::fetch_calendars(&mut client, body, &home, credentials, *buf_guard)
                 .await;
@@ -281,6 +316,62 @@ async fn fetch_calendars(
             Some("https://example.com/caldav/calendars/test/".to_string()),
             Some("Test Calendar".to_string()),
         )]))
+    }
+}
+
+async fn check_caldav_credentials(
+    #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut mbedtls_rs::Tls<'static>,
+    >,
+    #[cfg(target_arch = "xtensa")] dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
+    #[cfg(target_arch = "xtensa")] tcp_client: &'static embassy_net::tcp::client::TcpClient<
+        'static,
+        1,
+        4096,
+        4096,
+    >,
+    #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        &'static mut [u8; 8192],
+    >,
+    #[cfg(target_arch = "xtensa")] credentials: &storage::CaldavCreds,
+    #[cfg(not(target_arch = "xtensa"))] credentials: &storage::CaldavCreds,
+) -> Result<picoserve::response::StatusCode, crate::networking::NetworkError> {
+    #[cfg(target_arch = "xtensa")]
+    {
+        let mut buf_guard = req_buffer_mutex.lock().await;
+
+        let tls = tls_mutex.lock().await;
+        let tls_reference = tls.reference();
+
+        let mut client =
+            crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
+
+        let url_str = credentials.url.as_str();
+        let uri = fluent_uri::Uri::parse(url_str)
+            .map_err(|_| crate::networking::NetworkError::WrongUrl)?;
+
+        let scheme = uri.scheme().as_str();
+        let authority = uri.authority().map(|a| a.as_str()).unwrap_or("");
+        let origin = alloc::format!("{}://{}", scheme, authority);
+        let path = uri.path().as_str();
+
+        crate::networking::check_credentials(
+            &mut client,
+            &origin,
+            if path.is_empty() { "/" } else { path },
+            credentials,
+            &mut *buf_guard,
+        )
+        .await?;
+
+        Ok(picoserve::response::StatusCode::OK)
+    }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        let _ = credentials;
+        Ok(picoserve::response::StatusCode::OK)
     }
 }
 

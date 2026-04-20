@@ -239,10 +239,9 @@ where
                                                             break;
                                                         }
                                                         vcal_parser::vevent::VcalEvent::Summary(
-                                                            ref summary,
+                                                            summary,
                                                         ) => {
-                                                            cal_data.summary =
-                                                                Some(summary.clone());
+                                                            cal_data.summary = Some(summary);
                                                         }
                                                         vcal_parser::vevent::VcalEvent::DtStart(
                                                             ref dtstart,

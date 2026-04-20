@@ -3,6 +3,13 @@ use alloc::{string::String, vec::Vec};
 #[cfg(not(target_arch = "xtensa"))]
 use std::{string::String, vec::Vec};
 
+#[derive(thiserror::Error, picoserve::response::ErrorWithStatusCode, Debug)]
+#[status_code(INTERNAL_SERVER_ERROR)]
+pub enum StorageError {
+    #[error("Failed to read NVS")]
+    ReadError,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
 pub struct NvsConfig {
     pub wifi: Option<WifiCreds>,
@@ -95,7 +102,7 @@ mod xtensa {
         flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
     ) -> Option<NvsConfig> {
         let mut borrow = flash_cell.lock().await;
-        let mut data_buffer = [0u8; 2048];
+        let mut data_buffer = [0u8; 3000];
 
         let async_flash = BlockingAsync::new(&mut *borrow);
 
