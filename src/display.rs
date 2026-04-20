@@ -257,26 +257,45 @@ impl OccupiedSpaces {
 }
 
 impl OccupiedSpaces {
-    fn add_space(&mut self, range: core::range::RangeInclusive<u16>, right_edge: u16) {
-        self.0.push(OccupiedSpace { range, right_edge });
+    fn add_space(
+        &mut self,
+        y_range: core::range::RangeInclusive<u16>,
+        x_range: core::range::RangeInclusive<u16>,
+    ) {
+        self.0.push(OccupiedSpace { y_range, x_range });
     }
 
-    fn get_next_free_slot(&self, new_event_range: core::range::RangeInclusive<u16>) -> u16 {
-        let mut max_edge = 0;
-        // for events which are in the new event range
-        for space in self.0.iter().filter(|occ_space| {
-            occ_space.range.start < new_event_range.last
-                && occ_space.range.last > new_event_range.start
-        }) {
-            max_edge = max_edge.max(space.right_edge);
+    fn get_next_free_slot(
+        &self,
+        new_event_range: core::range::RangeInclusive<u16>,
+        width: u16,
+    ) -> u16 {
+        let mut overlapping: alloc::vec::Vec<&OccupiedSpace> = self
+            .0
+            .iter()
+            .filter(|occ_space| {
+                occ_space.y_range.start < new_event_range.last
+                    && occ_space.y_range.last > new_event_range.start
+            })
+            .collect();
+
+        overlapping.sort_by_key(|s| s.x_range.start);
+
+        let mut current_x = 0;
+        for space in overlapping {
+            // If there is a gap large enough for the current event's width, use it
+            if space.x_range.start > current_x + width {
+                return current_x;
+            }
+            current_x = current_x.max(space.x_range.last);
         }
-        max_edge
+        current_x
     }
 }
 
 pub(crate) struct OccupiedSpace {
-    range: core::range::RangeInclusive<u16>,
-    right_edge: u16,
+    y_range: core::range::RangeInclusive<u16>,
+    x_range: core::range::RangeInclusive<u16>,
 }
 
 pub(crate) fn draw_event<D>(
@@ -335,10 +354,6 @@ pub(crate) fn draw_event<D>(
         calculate_end_height(get_display_hours() as u16 * 60, start_display_hour),
     );
 
-    let next_free_slot = spaces.get_next_free_slot(RangeInclusive::from(y as u16..=end_y as u16));
-
-    let x: i32 = START_POS + next_free_slot as i32;
-
     let available_height = end_y.saturating_sub(y);
 
     let single_line_height = EVENT_FONT.character_size.height;
@@ -352,6 +367,23 @@ pub(crate) fn draw_event<D>(
 
     let time_str: heapless::String<15> =
         hformat!("{}-{}", start.strftime("%H:%M"), end.strftime("%H:%M")).unwrap();
+
+    let estimated_width = if oneline {
+        calculate_text_width(time_str.len() as u16, MINI_FONT)
+            + calculate_text_width(text.len() as u16, EVENT_FONT)
+            + 5
+    } else {
+        calculate_text_width(time_str.len() as u16, MINI_FONT)
+            .max(calculate_text_width(text.len() as u16, EVENT_FONT))
+            + 5
+    };
+
+    let next_free_slot = spaces.get_next_free_slot(
+        RangeInclusive::from(y as u16..=end_y as u16),
+        estimated_width,
+    );
+
+    let x: i32 = START_POS + next_free_slot as i32;
 
     let time_text = Text::with_baseline(
         &time_str,
@@ -390,8 +422,10 @@ pub(crate) fn draw_event<D>(
 
     spaces.add_space(
         RangeInclusive::from(ebb.top_left.y as u16..=ebb.bottom_right().unwrap().y as u16),
-        // +2 is needed beacuse of extend_rectangle pushes it 2 pixels to the left
-        (ebb.bottom_right().unwrap().x + 2 - START_POS) as u16,
+        RangeInclusive::from(
+            (ebb.top_left.x - START_POS).max(0) as u16
+                ..=(ebb.bottom_right().unwrap().x + 2 - START_POS) as u16,
+        ),
     );
 
     ebb.into_styled(OVERWRITE_STYLE).draw(display).unwrap();

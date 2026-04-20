@@ -82,9 +82,14 @@ fn main() {
             "S",
         ),
         sample_event(
-            "2026-07-11T07:10:00".parse().unwrap(),
-            "2026-07-11T07:20:00".parse().unwrap(),
+            "2026-07-11T07:40:00".parse().unwrap(),
+            "2026-07-11T08:10:00".parse().unwrap(),
             "SEnd",
+        ),
+        sample_event(
+            "2026-07-11T07:40:00".parse().unwrap(),
+            "2026-07-11T07:50:00".parse().unwrap(),
+            "ST",
         ),
         sample_event(
             "2026-07-11T08:10:00".parse().unwrap(),
