@@ -73,7 +73,7 @@ impl AppBuilder for AppProps {
                     move |picoserve::extract::Json(resp_wifi): picoserve::extract::Json<
                         storage::WifiCreds,
                     >| async move {
-                        defmt::info!("Received config change request: {:?}", resp_wifi);
+                        crate::defmt::info!("Received config change request: {:?}", resp_wifi);
 
                         #[cfg(target_arch = "xtensa")]
                         let mut nvs = storage::read_config(flash).await.unwrap_or_default();
@@ -322,13 +322,13 @@ async fn save_caldav_handler(
     >,
     picoserve::extract::Json(resp_caldav): picoserve::extract::Json<storage::CaldavCreds>,
 ) -> impl picoserve::response::IntoResponse {
-    defmt::info!("Received config change request: {:?}", resp_caldav);
+    crate::defmt::info!("Received config change request: {:?}", resp_caldav);
 
     let url = fluent_uri::Uri::parse(resp_caldav.url.as_str());
     match url {
-        Ok(res) => defmt::info!("Parsed URL: {}", res.as_str()),
+        Ok(res) => crate::defmt::info!("Parsed URL: {}", res.as_str()),
         Err(err) => {
-            defmt::error!("Failed to parse URL: {}", defmt::Debug2Format(&err));
+            crate::defmt::error!("Failed to parse URL: {}", crate::defmt::Debug2Format(&err));
             return picoserve::response::StatusCode::BAD_REQUEST;
         }
     }

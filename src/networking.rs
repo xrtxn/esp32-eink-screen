@@ -71,7 +71,7 @@ pub async fn sync_time(
     let need_initial_sync = INITIAL_NTP_SYNC.load(core::sync::atomic::Ordering::Relaxed) == 0;
     // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
     if prev_boot_count.is_multiple_of(5) || need_initial_sync {
-        defmt::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
+        crate::defmt::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
         let time = get_time(stack).await;
         // set_current_time_us expects microseconds
         rtc.set_current_time_us(
@@ -113,7 +113,7 @@ pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
         .await
         .unwrap();
     let time = jiff::Timestamp::from_second(result.seconds as i64).unwrap();
-    defmt::info!("Current time: {:?}", defmt::Debug2Format(&time));
+    crate::defmt::info!("Current time: {:?}", crate::defmt::Debug2Format(&time));
     time
 }
 
@@ -135,9 +135,9 @@ pub async fn calendar_data_req(
     creds: &CaldavCreds,
     calendar_ids: &[String],
 ) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
-    defmt::info!(
+    crate::defmt::info!(
         "Making calendar request for date: {}",
-        defmt::Debug2Format(&date)
+        crate::defmt::Debug2Format(&date)
     );
     let start_zoned = date
         .datetime()
@@ -173,7 +173,6 @@ pub async fn calendar_data_req(
         end_utc.second()
     );
 
-    // make static
     let body: heapless::String<554> = heapless::format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
@@ -207,7 +206,7 @@ pub async fn calendar_data_req(
     let url = match url {
         Ok(u) => u,
         Err(e) => {
-            defmt::error!("Failed to parse URL: {}", defmt::Debug2Format(&e));
+            crate::defmt::error!("Failed to parse URL: {}", crate::defmt::Debug2Format(&e));
             crate::BootType::set(crate::BootType::Config);
             esp_hal::system::software_reset();
         }
@@ -225,13 +224,13 @@ pub async fn calendar_data_req(
         let path: heapless::String<{ crate::server::MAX_PATH_LEN }> =
             heapless::format!("{}calendars/{}{}", url.path().as_str(), username, cal_id).unwrap();
 
-        defmt::info!("url path: {}", url.path().as_str());
-        defmt::info!(
+        crate::defmt::info!("url path: {}", url.path().as_str());
+        crate::defmt::info!(
             "username: {}, calendar id: {}",
             username,
-            defmt::Display2Format(cal_id)
+            crate::defmt::Display2Format(cal_id)
         );
-        defmt::debug!("request path: {}", path);
+        crate::defmt::debug!("request path: {}", path);
 
         let vec = req(
             client,
@@ -268,11 +267,14 @@ async fn req(
         .body(body);
 
     let response = request.send(req_buffer).await.unwrap();
-    defmt::debug!("Response status: {:?}", response.status);
+    crate::defmt::debug!("Response status: {:?}", response.status);
 
     let mut reader = response.body().reader();
     let cal = crate::parsing::parse_body_cal(&mut reader).await.unwrap();
-    defmt::info!("Parsed calendar data: {:?}", defmt::Debug2Format(&cal));
+    crate::defmt::info!(
+        "Parsed calendar data: {:?}",
+        crate::defmt::Debug2Format(&cal)
+    );
     cal
 }
 
@@ -311,14 +313,14 @@ pub(crate) async fn get_events(
             success = true;
             break;
         };
-        defmt::warn!(
+        crate::defmt::warn!(
             "Failed to get calendar data on attempt {}, retrying...",
             tries
         );
     }
 
     if !success {
-        defmt::error!("Failed after 3 attempts, entering deep sleep");
+        crate::defmt::error!("Failed after 3 attempts, entering deep sleep");
         crate::hardware::go_to_deep_sleep(rtc);
     }
     resp
@@ -338,19 +340,19 @@ pub async fn fetch_domain_endpoint(
     {
         Ok(req) => req.path(path),
         Err(e) => {
-            defmt::error!("Failed to create request: {:?}", e);
+            crate::defmt::error!("Failed to create request: {:?}", e);
             return None;
         }
     };
     let response = match request.send(response_buf).await {
         Ok(res) => res,
         Err(e) => {
-            defmt::error!("Failed to send request: {:?}", e);
+            crate::defmt::error!("Failed to send request: {:?}", e);
             return None;
         }
     };
 
-    defmt::info!("Response status: {:?}", response.status);
+    crate::defmt::info!("Response status: {:?}", response.status);
 
     let location: Option<heapless::String<{ crate::server::MAX_URL_LEN }>> = response
         .headers()
@@ -358,7 +360,7 @@ pub async fn fetch_domain_endpoint(
         .and_then(|(_, value)| core::str::from_utf8(value).ok())
         .and_then(|s| heapless::String::try_from(s).ok());
 
-    defmt::debug!("Response body: {:?}", location);
+    crate::defmt::debug!("Response body: {:?}", location);
     location
 }
 
@@ -388,11 +390,11 @@ pub(crate) async fn fetch_principal_url(
 
     let response = request.send(response_buf).await.unwrap();
 
-    defmt::info!("Response status: {:?}", response.status);
+    crate::defmt::info!("Response status: {:?}", response.status);
     let res = response.body().read_to_end().await.unwrap();
 
     let Ok(res) = str::from_utf8(res) else {
-        defmt::error!("Failed to parse response body as UTF-8");
+        crate::defmt::error!("Failed to parse response body as UTF-8");
         return None;
     };
 
@@ -440,18 +442,18 @@ pub(crate) async fn fetch_calendar_home_set(
 
     let response = request.send(response_buf).await.unwrap();
 
-    defmt::info!("Response status: {:?}", response.status);
+    crate::defmt::info!("Response status: {:?}", response.status);
     let res = response.body().read_to_end().await.unwrap();
 
     let res = match str::from_utf8(res) {
         Ok(v) => v,
         Err(_) => {
-            defmt::error!("Failed to parse response body as UTF-8");
+            crate::defmt::error!("Failed to parse response body as UTF-8");
             return None;
         }
     };
     let res = get_calendar_home_set(res);
-    defmt::info!("Calendar home set: {}", defmt::Debug2Format(&res));
+    crate::defmt::info!("Calendar home set: {}", crate::defmt::Debug2Format(&res));
     res
 }
 
@@ -496,10 +498,10 @@ pub(crate) async fn fetch_calendars(
 
     let response = request.send(response_buf).await.unwrap();
 
-    defmt::info!("Response status: {:?}", response.status);
+    crate::defmt::info!("Response status: {:?}", response.status);
     let mut reader = response.body().reader();
     let calendars = crate::parsing::parse_body(&mut reader).await.unwrap();
-    defmt::info!("Calendars: {:?}", defmt::Debug2Format(&calendars));
+    crate::defmt::info!("Calendars: {:?}", crate::defmt::Debug2Format(&calendars));
 
     calendars
 }

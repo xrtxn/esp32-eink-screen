@@ -1,7 +1,6 @@
-use crate::display::DISPLAY_HOURS;
 use embedded_graphics::prelude::*;
 use embedded_graphics_simulator::SimulatorDisplay;
-use jiff::{Timestamp, Zoned, civil::DateTime, tz::TimeZone};
+use jiff::{Zoned, civil::DateTime, tz::TimeZone};
 use weact_studio_epd::Color;
 
 #[path = "../../src/display.rs"]
@@ -40,7 +39,7 @@ fn main() {
 
     let start_display_hour: u8 = now
         .hour()
-        .clamp(0, 24 - get_display_hours() as i8)
+        .clamp(0, 24 - display::get_display_hours() as i8)
         .try_into()
         .unwrap();
 
@@ -79,8 +78,10 @@ fn main() {
     display::draw_sync_time(&mut display, &now);
     //display::draw_days(&mut display, &now.weekday(), 3);
 
+    let today = now.date();
+
     for (start, end, title) in &events {
-        display::draw_event(&mut display, start, end, title, start_display_hour);
+        display::draw_event(&mut display, start, end, title, start_display_hour, &today);
     }
 
     display::add_footer_info(&mut display);

@@ -20,7 +20,8 @@ impl NvsConfig {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(crate::defmt::Format))]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct WifiCreds {
     pub ssid: heapless::String<32>,
     pub password: heapless::String<32>,
@@ -35,7 +36,8 @@ impl WifiCreds {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, defmt::Format, Default, Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(crate::defmt::Format))]
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug, Clone)]
 pub struct CaldavCreds {
     pub url: heapless::String<128>,
     pub username: heapless::String<32>,
@@ -132,7 +134,7 @@ mod xtensa {
             .await
             .unwrap();
 
-        defmt::info!("Config written to flash");
+        crate::defmt::info!("Config written to flash");
     }
 }
 
@@ -145,6 +147,9 @@ mod not_xtensa {
     }
 
     pub async fn write_config(config: NvsConfig) {
-        defmt::info!("Mock writing config: {:?}", defmt::Debug2Format(&config));
+        crate::defmt::info!(
+            "Mock writing config: {:?}",
+            crate::defmt::Debug2Format(&config)
+        );
     }
 }

@@ -39,7 +39,7 @@ where
 
         // TODO: handle if split inside a utf-8 character
         if let Ok(mut current_str) = core::str::from_utf8(parse_slice) {
-            defmt::debug!("Parsing chunked calendar data: {}", current_str);
+            crate::defmt::debug!("Parsing chunked calendar data: {}", current_str);
             if !handled_start && current_str.starts_with("<?") {
                 match vcal_parser::calendars::parse_xml_version(current_str) {
                     Ok((rest, _)) => {
@@ -48,7 +48,10 @@ where
                     }
                     Err(nom::Err::Incomplete(_)) => {}
                     Err(e) => {
-                        defmt::error!("Failed parsing XML version: {}", defmt::Debug2Format(&e))
+                        crate::defmt::error!(
+                            "Failed parsing XML version: {}",
+                            crate::defmt::Debug2Format(&e)
+                        )
                     }
                 }
             }
@@ -70,9 +73,9 @@ where
                             XmlEvent::Open(Namespace::D(DNamespace::Href)) => next_href = true,
                             XmlEvent::Close(Namespace::D(DNamespace::Response)) => {
                                 if cal_data.href.is_none() {
-                                    defmt::warn!("Calendar response without href, skipping");
+                                    crate::defmt::warn!("Calendar response without href, skipping");
                                 } else if cal_data.display_name.is_none() {
-                                    defmt::warn!(
+                                    crate::defmt::warn!(
                                         "Calendar response without display name, skipping"
                                     );
                                 } else {
@@ -81,9 +84,9 @@ where
                             }
                             XmlEvent::Close(Namespace::D(DNamespace::Multistatus)) => {
                                 if remaining.trim().is_empty() {
-                                    defmt::info!("Finished parsing all calendar data");
+                                    crate::defmt::info!("Finished parsing all calendar data");
                                 } else {
-                                    defmt::warn!("Leftover data: {}", remaining);
+                                    crate::defmt::warn!("Leftover data: {}", remaining);
                                 }
                                 break;
                             }
@@ -108,22 +111,22 @@ where
                         current_str = remaining;
                     }
                     Err(nom::Err::Incomplete(_)) => {
-                        defmt::warn!(
+                        crate::defmt::warn!(
                             "Incomplete chunked calendar data, waiting for more data to arrive"
                         );
                         break;
                     }
                     Err(nom::Err::Error(err)) => {
-                        defmt::error!(
+                        crate::defmt::error!(
                             "Failed to parse chunked calendar data: {}",
-                            defmt::Debug2Format(&err)
+                            crate::defmt::Debug2Format(&err)
                         );
                         break;
                     }
                     Err(nom::Err::Failure(fail)) => {
-                        defmt::error!(
+                        crate::defmt::error!(
                             "Failed to parse chunked calendar data: {}",
-                            defmt::Debug2Format(&fail)
+                            crate::defmt::Debug2Format(&fail)
                         );
                         break;
                     }
@@ -188,7 +191,10 @@ where
                     }
                     Err(nom::Err::Incomplete(_)) => {}
                     Err(e) => {
-                        defmt::error!("Failed parsing XML version: {}", defmt::Debug2Format(&e))
+                        crate::defmt::error!(
+                            "Failed parsing XML version: {}",
+                            crate::defmt::Debug2Format(&e)
+                        )
                     }
                 }
             }
@@ -255,9 +261,9 @@ where
                                                 txt = rem;
                                             }
                                             Err(e) => {
-                                                defmt::error!(
+                                                crate::defmt::error!(
                                                     "Failed to parse VEVENT data: {}",
-                                                    defmt::Debug2Format(&e)
+                                                    crate::defmt::Debug2Format(&e)
                                                 )
                                             }
                                         }
@@ -269,22 +275,22 @@ where
                         current_str = remaining;
                     }
                     Err(nom::Err::Incomplete(_)) => {
-                        defmt::warn!(
+                        crate::defmt::warn!(
                             "Incomplete chunked vcal data, waiting for more data to arrive"
                         );
                         break;
                     }
                     Err(nom::Err::Error(err)) => {
-                        defmt::error!(
+                        crate::defmt::error!(
                             "Failed to parse chunked vcal data: {}",
-                            defmt::Debug2Format(&err)
+                            crate::defmt::Debug2Format(&err)
                         );
                         break;
                     }
                     Err(nom::Err::Failure(fail)) => {
-                        defmt::error!(
+                        crate::defmt::error!(
                             "Failed to parse chunked vcal data: {}",
-                            defmt::Debug2Format(&fail)
+                            crate::defmt::Debug2Format(&fail)
                         );
                         break;
                     }
@@ -304,7 +310,7 @@ where
         // Consume all remaining bytes, it only fetches new data if we consumed everything that was previously fetched
         embedded_io_async::BufRead::consume(body_reader, len);
     }
-    defmt::info!(
+    crate::defmt::info!(
         "Finished parsing calendar events, total events parsed: {:?}",
         events.len()
     );

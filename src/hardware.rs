@@ -13,7 +13,7 @@ pub(crate) fn go_to_deep_sleep(rtc: &mut esp_hal::rtc_cntl::Rtc<'_>) -> ! {
     let sleep_time = core::time::Duration::from_secs(SLEEP_DURATION);
     let timer_wakeup = TimerWakeupSource::new(sleep_time);
 
-    defmt::info!("Going to sleep for {:?}...", sleep_time);
+    crate::defmt::info!("Going to sleep for {:?}...", sleep_time);
 
     let pin: AnyPin<'static> = unsafe { AnyPin::steal(0) };
     let ext0 = Ext0WakeupSource::new(pin, WakeupLevel::Low);
@@ -30,12 +30,12 @@ pub(crate) fn apply_wakeup_boot_type() {
     match wakeup_cause() {
         // GPIO0 button was pressed
         SleepSource::Ext0 => {
-            defmt::info!("Woke up from GPIO0, setting boot type to Config");
+            crate::defmt::info!("Woke up from GPIO0, setting boot type to Config");
             BootType::set(BootType::Config);
         }
         // Timer expired
         SleepSource::Timer => {
-            defmt::info!("Woke up from timer, setting boot type to Display");
+            crate::defmt::info!("Woke up from timer, setting boot type to Display");
             BootType::set(BootType::Display);
         }
         // For other sources keep the current state

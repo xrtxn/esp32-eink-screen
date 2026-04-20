@@ -1,4 +1,5 @@
-use defmt::info;
+#[cfg(feature = "defmt")]
+use crate::defmt::info;
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
 use embedded_graphics::prelude::{Drawable, Primitive};
@@ -94,7 +95,8 @@ where
     let position = display.bounding_box().top_left;
 
     for hour in start_display_hour..=start_display_hour + get_display_hours() {
-        let fmt_hour: heapless::String<5> = hformat!("{:0>2}:00", hour).unwrap();
+        let fmt_hour: heapless::String<5> =
+            hformat!("{:0>2}:00", if hour == 24 { 0 } else { hour }).unwrap();
         Text::with_baseline(
             &fmt_hour,
             position + Point::new(0, exceeded_height),
@@ -149,7 +151,8 @@ where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    defmt::info!("Calendar sync time: {}", defmt::Debug2Format(&time));
+    #[cfg(feature = "defmt")]
+    crate::defmt::info!("Calendar sync time: {}", crate::defmt::Debug2Format(&time));
     let fmt_time: heapless::String<11> =
         hformat!("Sync: {:02}:{:02}", time.hour(), time.minute()).unwrap();
 
@@ -219,9 +222,10 @@ where
     if time.hour() < start_display_hour as i8
         || time.hour() > (start_display_hour + display_hours) as i8
     {
-        defmt::warn!(
+        #[cfg(feature = "defmt")]
+        crate::defmt::warn!(
             "Current time {} is out of display bounds ({}-{}), skipping time ticker",
-            defmt::Debug2Format(&time),
+            crate::defmt::Debug2Format(&time),
             start_display_hour,
             start_display_hour + display_hours
         );
@@ -273,11 +277,12 @@ pub(crate) fn draw_event<D>(
 
     if end_mins_from_midnight <= display_start_mins || start_mins_from_midnight >= display_end_mins
     {
-        defmt::warn!(
+        #[cfg(feature = "defmt")]
+        crate::defmt::warn!(
             "Event '{}' is out of display bounds ({}-{}), skipping",
             text,
-            defmt::Debug2Format(&start),
-            defmt::Debug2Format(&end)
+            crate::defmt::Debug2Format(&start),
+            crate::defmt::Debug2Format(&end)
         );
         return;
     }
@@ -382,10 +387,11 @@ where
         };
         x_offset += day_text.chars().count() as i32 * EVENT_FONT.character_size.width as i32 + 15;
         let pos = Point::new(starting_x + x_offset, y as i32);
+        #[cfg(feature = "defmt")]
         info!(
             "Drawing day '{}' at position {:?}",
             day_text,
-            defmt::Debug2Format(&pos)
+            crate::defmt::Debug2Format(&pos)
         );
 
         Text::with_baseline(
@@ -488,7 +494,8 @@ pub mod not_xtensa {
     use super::*;
 
     pub(crate) async fn write_to_screen() {
-        defmt::info!("Mock writing to screen");
+        #[cfg(feature = "defmt")]
+        crate::defmt::info!("Mock writing to screen");
     }
 }
 

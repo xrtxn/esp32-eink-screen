@@ -8,6 +8,9 @@
 )]
 #![allow(clippy::pedantic)]
 
+#[cfg(feature = "defmt")]
+pub use ::defmt;
+
 mod display;
 mod hardware;
 mod init;
@@ -77,7 +80,8 @@ type EpdDriver = WeActStudio420BlackWhiteDriver<
     Delay,
 >;
 
-#[derive(defmt::Format, PartialEq, Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(crate::defmt::Format))]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub(crate) enum BootType {
     Display = 0,
     Config = 1,
@@ -113,7 +117,7 @@ async fn main(spawner: Spawner) {
     hardware::apply_wakeup_boot_type();
 
     let prev_boot_count = DISPLAY_SLEEP_COUNT.load(core::sync::atomic::Ordering::Relaxed);
-    defmt::info!("Successful sleep wake count: {}", prev_boot_count + 1);
+    crate::defmt::info!("Successful sleep wake count: {}", prev_boot_count + 1);
 
     let boot_type = BootType::get();
 
@@ -127,7 +131,7 @@ async fn main(spawner: Spawner) {
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
 
-    defmt::debug!("Initialized flash storage");
+    crate::defmt::debug!("Initialized flash storage");
 
     // this affects the remaining stack
     esp_alloc::heap_allocator!(size: 64 * 1024);
@@ -146,11 +150,11 @@ async fn main(spawner: Spawner) {
 
     spawner.must_spawn(hardware::button_task(button));
 
-    defmt::debug!("Trying to read config");
+    crate::defmt::debug!("Trying to read config");
 
     let stored_config = storage::read_config(flash).await;
 
-    defmt::debug!("Config read complete");
+    crate::defmt::debug!("Config read complete");
 
     // 4 is a debug value
     let mut sync_calendars = alloc::vec::Vec::with_capacity(4);
@@ -168,7 +172,7 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    defmt::info!("Boot type: {:?}", boot_type);
+    crate::defmt::info!("Boot type: {:?}", boot_type);
 
     let (net_stack, trng, ncreds, network_status) = if boot_type == BootType::Display {
         let config = match stored_config.clone() {
@@ -176,7 +180,9 @@ async fn main(spawner: Spawner) {
             _ => {
                 #[cfg(debug_assertions)]
                 {
-                    defmt::warn!("No config found; using compile-time credentials (debug build)");
+                    crate::defmt::warn!(
+                        "No config found; using compile-time credentials (debug build)"
+                    );
                     let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
                     NvsConfig::new(Some(wifi_creds))
                 }
@@ -189,7 +195,7 @@ async fn main(spawner: Spawner) {
         };
 
         if config.wifi.is_none() || config.caldav.is_none() {
-            defmt::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
+            crate::defmt::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
             BootType::set(BootType::Config);
             esp_hal::system::software_reset();
         }
@@ -253,9 +259,9 @@ async fn main(spawner: Spawner) {
     }
 
     let ip_config = net_stack.config_v4().unwrap();
-    defmt::info!("Network connected with IP address: {}", ip_config.address);
+    crate::defmt::info!("Network connected with IP address: {}", ip_config.address);
 
-    defmt::info!("Microcontroller initialized");
+    crate::defmt::info!("Microcontroller initialized");
 
     let (mut display, mut driver) = init::init_display(
         peripherals.GPIO12,
