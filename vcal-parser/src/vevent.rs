@@ -1,6 +1,9 @@
 #[cfg(test)]
 extern crate std;
 use alloc::string::{String, ToString};
+#[cfg(test)]
+use std::println;
+
 use jiff::Timestamp;
 use nom::{
     IResult, Parser,
@@ -9,8 +12,6 @@ use nom::{
     character::streaming::char,
     combinator::opt,
 };
-#[cfg(test)]
-use std::println;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum VcalEvent {
@@ -21,11 +22,28 @@ pub enum VcalEvent {
     DtEnd(String),
 }
 
-#[derive(PartialEq, Default, Clone, Debug)]
+#[derive(Eq, PartialEq, PartialOrd, Default, Clone, Debug)]
 pub struct VEventData {
     pub summary: Option<String>,
     pub dtstart: Option<Timestamp>,
     pub dtend: Option<Timestamp>,
+}
+
+impl VEventData {
+    /// Returns the event duration, or None if either timestamp is missing.
+    fn duration(&self) -> Option<i64> {
+        match (self.dtstart, self.dtend) {
+            (Some(start), Some(end)) => Some(end.as_second() - start.as_second()),
+            _ => None,
+        }
+    }
+}
+
+impl Ord for VEventData {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        // Longer duration comes first → reverse the comparison (b vs a)
+        other.duration().cmp(&self.duration())
+    }
 }
 
 pub fn parse_date(dt: &str) -> Timestamp {

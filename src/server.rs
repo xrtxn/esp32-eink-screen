@@ -2,9 +2,10 @@
 use alloc::string::String;
 #[cfg(target_arch = "xtensa")]
 use alloc::vec::Vec;
-use picoserve::AppBuilder;
 #[cfg(not(target_arch = "xtensa"))]
 use std::string::String;
+
+use picoserve::AppBuilder;
 use vcal_parser::calendars::CalendarData;
 
 use crate::storage;
@@ -356,9 +357,10 @@ pub enum NetworkStatus {
 
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
-    use super::{AppProps, WEB_TASK_POOL_SIZE};
     use embassy_time::Duration;
     use static_cell::StaticCell;
+
+    use super::{AppProps, WEB_TASK_POOL_SIZE};
 
     static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Duration::from_secs(5),

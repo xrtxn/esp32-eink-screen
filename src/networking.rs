@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::string::ToString;
 use core::fmt::Write;
 use core::net::{SocketAddr, SocketAddrV4};
+
 use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;

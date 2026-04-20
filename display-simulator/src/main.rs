@@ -1,7 +1,14 @@
+// Available in rust 1.95
+#![feature(new_range_api)]
+
+extern crate alloc;
+
 use embedded_graphics::prelude::*;
 use embedded_graphics_simulator::SimulatorDisplay;
 use jiff::{Zoned, civil::DateTime, tz::TimeZone};
 use weact_studio_epd::Color;
+
+use crate::display::OccupiedSpaces;
 
 #[path = "../../src/display.rs"]
 mod display;
@@ -30,7 +37,10 @@ fn main() {
 
     let now = Zoned::now()
         .with()
-        .hour(21)
+        .year(2026)
+        .month(7)
+        .day(11)
+        .hour(6)
         .minute(32)
         .second(1)
         .subsec_nanosecond(31) // Zeroes out the fractional seconds
@@ -45,16 +55,46 @@ fn main() {
 
     display::draw_time_row_header(&mut display, start_display_hour);
 
-    let events: Vec<(Zoned, Zoned, &str)> = vec![
+    let mut events: Vec<(Zoned, Zoned, &str)> = vec![
         sample_event(
             "2026-07-11T00:00:00".parse().unwrap(),
             "2026-07-11T01:30:00".parse().unwrap(),
             "Morning",
         ),
         sample_event(
+            "2026-07-11T07:30:00".parse().unwrap(),
+            "2026-07-11T07:40:00".parse().unwrap(),
+            "S1",
+        ),
+        sample_event(
+            "2026-07-11T07:20:00".parse().unwrap(),
+            "2026-07-11T07:30:00".parse().unwrap(),
+            "S2",
+        ),
+        sample_event(
+            "2026-07-11T07:20:00".parse().unwrap(),
+            "2026-07-11T07:40:00".parse().unwrap(),
+            "S3",
+        ),
+        sample_event(
+            "2026-07-11T07:10:00".parse().unwrap(),
+            "2026-07-11T07:20:00".parse().unwrap(),
+            "S",
+        ),
+        sample_event(
+            "2026-07-11T07:10:00".parse().unwrap(),
+            "2026-07-11T07:20:00".parse().unwrap(),
+            "SEnd",
+        ),
+        sample_event(
             "2026-07-11T08:10:00".parse().unwrap(),
-            "2026-07-11T08:20:00".parse().unwrap(),
+            "2026-07-11T08:50:00".parse().unwrap(),
             "Breakfast",
+        ),
+        sample_event(
+            "2026-07-11T08:50:00".parse().unwrap(),
+            "2026-07-11T09:00:00".parse().unwrap(),
+            "Pondering",
         ),
         sample_event(
             "2026-07-11T08:00:00".parse().unwrap(),
@@ -79,9 +119,19 @@ fn main() {
     //display::draw_days(&mut display, &now.weekday(), 3);
 
     let today = now.date();
+    events.sort();
 
+    let mut spaces = OccupiedSpaces::new();
     for (start, end, title) in &events {
-        display::draw_event(&mut display, start, end, title, start_display_hour, &today);
+        display::draw_event(
+            &mut display,
+            start,
+            end,
+            title,
+            start_display_hour,
+            &today,
+            &mut spaces,
+        );
     }
 
     display::add_footer_info(&mut display);

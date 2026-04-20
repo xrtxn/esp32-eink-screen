@@ -1,3 +1,5 @@
+use alloc::string::{String, ToString};
+
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -6,8 +8,6 @@ use nom::{
     combinator::opt,
     sequence::delimited,
 };
-
-use alloc::string::{String, ToString};
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum XmlEvent {

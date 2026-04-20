@@ -1,5 +1,5 @@
-#[cfg(feature = "defmt")]
-use crate::defmt::info;
+use core::range::RangeInclusive;
+
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
 use embedded_graphics::prelude::{Drawable, Primitive};
@@ -7,6 +7,9 @@ use embedded_graphics::primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder,
 use embedded_graphics::text::Text;
 use heapless::format as hformat;
 use weact_studio_epd::Color as EpdColor;
+
+#[cfg(feature = "defmt")]
+use crate::defmt::info;
 
 #[allow(dead_code)]
 pub const DISPLAY_WIDTH: u32 = 300;
@@ -245,6 +248,37 @@ where
         .unwrap();
 }
 
+pub(crate) struct OccupiedSpaces(alloc::vec::Vec<OccupiedSpace>);
+
+impl OccupiedSpaces {
+    pub fn new() -> Self {
+        Self(alloc::vec::Vec::new())
+    }
+}
+
+impl OccupiedSpaces {
+    fn add_space(&mut self, range: core::range::RangeInclusive<u16>, right_edge: u16) {
+        self.0.push(OccupiedSpace { range, right_edge });
+    }
+
+    fn get_next_free_slot(&self, new_event_range: core::range::RangeInclusive<u16>) -> u16 {
+        let mut max_edge = 0;
+        // for events which are in the new event range
+        for space in self.0.iter().filter(|occ_space| {
+            occ_space.range.start < new_event_range.last
+                && occ_space.range.last > new_event_range.start
+        }) {
+            max_edge = max_edge.max(space.right_edge);
+        }
+        max_edge
+    }
+}
+
+pub(crate) struct OccupiedSpace {
+    range: core::range::RangeInclusive<u16>,
+    right_edge: u16,
+}
+
 pub(crate) fn draw_event<D>(
     display: &mut D,
     start: &jiff::Zoned,
@@ -252,6 +286,7 @@ pub(crate) fn draw_event<D>(
     text: &str,
     start_display_hour: u8,
     today: &jiff::civil::Date,
+    spaces: &mut OccupiedSpaces,
 ) where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
@@ -287,7 +322,6 @@ pub(crate) fn draw_event<D>(
         return;
     }
 
-    let x = START_POS;
     let y = calculate_start_height(
         (start_mins_from_midnight - display_start_mins).max(0) as u16,
         start_display_hour,
@@ -300,6 +334,10 @@ pub(crate) fn draw_event<D>(
         0,
         calculate_end_height(get_display_hours() as u16 * 60, start_display_hour),
     );
+
+    let next_free_slot = spaces.get_next_free_slot(RangeInclusive::from(y as u16..=end_y as u16));
+
+    let x: i32 = START_POS + next_free_slot as i32;
 
     let available_height = end_y.saturating_sub(y);
 
@@ -349,6 +387,12 @@ pub(crate) fn draw_event<D>(
     );
 
     extend_rectangle(&mut ebb);
+
+    spaces.add_space(
+        RangeInclusive::from(ebb.top_left.y as u16..=ebb.bottom_right().unwrap().y as u16),
+        // +2 is needed beacuse of extend_rectangle pushes it 2 pixels to the left
+        (ebb.bottom_right().unwrap().x + 2 - START_POS) as u16,
+    );
 
     ebb.into_styled(OVERWRITE_STYLE).draw(display).unwrap();
 
@@ -425,16 +469,15 @@ where
     .unwrap();
 }
 
+#[cfg(not(target_arch = "xtensa"))]
+pub use not_xtensa::*;
 #[cfg(target_arch = "xtensa")]
 pub use xtensa::*;
 
-#[cfg(not(target_arch = "xtensa"))]
-pub use not_xtensa::*;
-
 #[cfg(target_arch = "xtensa")]
 pub mod xtensa {
-    use super::draw_event;
     use alloc::string::ToString;
+
     use display_interface::AsyncWriteOnlyDataCommand;
     use embedded_hal::digital::OutputPin as EhalOutputPin;
     use embedded_hal_async::{delay::DelayNs, digital::Wait};
@@ -442,6 +485,7 @@ pub mod xtensa {
     use weact_studio_epd::WeActStudio420BlackWhiteDriver;
     pub use weact_studio_epd::graphics::Display420BlackWhite;
 
+    use super::draw_event;
     use crate::hardware;
 
     pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
@@ -463,6 +507,7 @@ pub mod xtensa {
         crate::display::draw_time_row_header(display, start_display_hour);
         crate::display::draw_base_calendar(display, start_display_hour);
         let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(2));
+        let mut spaces = super::OccupiedSpaces::new();
         for event in events
             .iter()
             .filter(|f| f.dtstart.is_some() && f.dtend.is_some())
@@ -476,6 +521,7 @@ pub mod xtensa {
                 &event.summary.clone().unwrap_or("No summary".to_string()),
                 start_display_hour,
                 &time.date(),
+                &mut spaces,
             );
         }
         #[cfg(debug_assertions)]

@@ -59,20 +59,20 @@ impl Default for DisplayConfig {
     }
 }
 
+#[cfg(not(target_arch = "xtensa"))]
+pub use not_xtensa::*;
 #[cfg(target_arch = "xtensa")]
 pub use xtensa::*;
 
-#[cfg(not(target_arch = "xtensa"))]
-pub use not_xtensa::*;
-
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
-    use super::NvsConfig;
     use embassy_embedded_hal::adapter::BlockingAsync;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::mutex::Mutex;
     pub use esp_storage::FlashStorage;
     use static_cell::StaticCell;
+
+    use super::NvsConfig;
 
     const NVS_STORAGE_START: u32 = 0x9000;
     const NVS_STORAGE_SIZE: u32 = 0x6000;

@@ -1,4 +1,6 @@
 #![feature(impl_trait_in_assoc_type)]
+// Stabilized in rust 1.95
+#![feature(new_range_api)]
 #![no_std]
 #![no_main]
 #![deny(
@@ -20,34 +22,30 @@ mod server;
 mod storage;
 mod wifi;
 
+use display_interface_spi::SPIInterface;
+use embassy_executor::Spawner;
+use embassy_futures::join::join;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpClient;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
-use weact_studio_epd::graphics::Display420BlackWhite;
-
-use crate::server::{NetworkStatus, WEB_TASK_POOL_SIZE, web_task};
-use crate::storage::NvsConfig;
-use esp_storage::FlashStorage;
-use picoserve::AppBuilder;
-use portable_atomic::{AtomicU8, AtomicU32};
-
-use display_interface_spi::SPIInterface;
-use embassy_executor::Spawner;
-use embassy_futures::join::join;
 use embassy_time::Delay;
-
 use embedded_hal_bus::spi::ExclusiveDevice;
+use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::{
     gpio::{Input, Output},
     spi::master::Spi,
 };
+use esp_storage::FlashStorage;
+use picoserve::AppBuilder;
+use portable_atomic::{AtomicU8, AtomicU32};
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
-
-use esp_backtrace as _;
+use weact_studio_epd::graphics::Display420BlackWhite;
 
 use crate::hardware::go_to_deep_sleep;
+use crate::server::{NetworkStatus, WEB_TASK_POOL_SIZE, web_task};
+use crate::storage::NvsConfig;
 
 extern crate alloc;
 
