@@ -102,6 +102,11 @@
                 // Initialize the display on page load
                 updateDisplay();
             </script>
+
+            <label for="next-n-hours-switch">
+                <input type="checkbox" id="next-n-hours-switch" role="switch" />
+                Show multiple days
+            </label>
         </div>
 
         <div class="container">
@@ -188,6 +193,9 @@
                     const displayedHours = document.querySelector(
                         "#display-hours-range",
                     ).value;
+                    const nextNHoursOnly = document.querySelector(
+                        "#next-n-hours-switch",
+                    ).checked;
                     console.log("Selected calendars:", selectedCalendars);
                     console.log("Displayed hours:", displayedHours);
                     try {
@@ -199,6 +207,7 @@
                             body: JSON.stringify({
                                 displayed_hours: parseInt(displayedHours, 10),
                                 calendars: selectedCalendars,
+                                next_n_hours_only: nextNHoursOnly,
                             }),
                         })
                             .then((response) => {

@@ -55,6 +55,8 @@ pub struct CaldavCreds {
 pub struct DisplayConfig {
     pub displayed_hours: u8,
     pub calendars: Vec<String>,
+    #[serde(default)]
+    pub next_n_hours_only: bool,
 }
 
 impl Default for DisplayConfig {
@@ -62,6 +64,7 @@ impl Default for DisplayConfig {
         Self {
             displayed_hours: 18,
             calendars: Vec::new(),
+            next_n_hours_only: false,
         }
     }
 }

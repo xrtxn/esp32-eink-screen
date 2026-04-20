@@ -52,8 +52,7 @@ fn build_index_html() {
     use base64::prelude::*;
     let favicon_base64 = BASE64_STANDARD.encode(&favicon);
 
-    // Replace the placeholder that was used by the Askama template
-    // Remove css link which is for local development
+    // Replace the placeholder for css and favicon
     let final_html = html
         .lines()
         .filter(|line| !line.contains(r#"link rel="stylesheet""#))
@@ -96,8 +95,7 @@ fn build_display_html() {
     use base64::prelude::*;
     let favicon_base64 = BASE64_STANDARD.encode(&favicon);
 
-    // Replace the placeholder that was used by the Askama template
-    // Remove css link which is for local development
+    // Replace the placeholder for css and favicon
     let final_html = html
         .lines()
         .filter(|line| !line.contains(r#"link rel="stylesheet""#))

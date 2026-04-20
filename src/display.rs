@@ -45,6 +45,12 @@ const fn calculate_row_padding(start_hour: u8, end_hour: u8) -> i32 {
 }
 
 pub static DISPLAY_HOURS: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(8);
+pub static NEXT_N_HOURS_ONLY: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+pub fn get_next_n_hours_only() -> bool {
+    NEXT_N_HOURS_ONLY.load(core::sync::atomic::Ordering::Relaxed)
+}
 
 pub fn get_display_hours() -> u8 {
     DISPLAY_HOURS.load(core::sync::atomic::Ordering::Relaxed)
@@ -98,8 +104,7 @@ where
     let position = display.bounding_box().top_left;
 
     for hour in start_display_hour..=start_display_hour + get_display_hours() {
-        let fmt_hour: heapless::String<5> =
-            hformat!("{:0>2}:00", if hour == 24 { 0 } else { hour }).unwrap();
+        let fmt_hour: heapless::String<5> = hformat!("{:0>2}:00", hour % 24).unwrap();
         Text::with_baseline(
             &fmt_hour,
             position + Point::new(0, exceeded_height),
@@ -310,21 +315,13 @@ pub(crate) fn draw_event<D>(
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    let start_mins_from_midnight = if start.date() < *today {
-        0
-    } else if start.date() > *today {
-        return;
-    } else {
-        start.hour() as i32 * 60 + start.minute() as i32
-    };
+    let start_days_diff = start.date().since(*today).unwrap().get_days() as i32;
+    let start_mins_from_midnight =
+        start_days_diff * 24 * 60 + start.hour() as i32 * 60 + start.minute() as i32;
 
-    let end_mins_from_midnight = if end.date() < *today {
-        return;
-    } else if end.date() > *today {
-        24 * 60
-    } else {
-        end.hour() as i32 * 60 + end.minute() as i32
-    };
+    let end_days_diff = end.date().since(*today).unwrap().get_days() as i32;
+    let end_mins_from_midnight =
+        end_days_diff * 24 * 60 + end.hour() as i32 * 60 + end.minute() as i32;
 
     let display_start_mins = start_display_hour as i32 * 60;
     let display_end_mins = (start_display_hour as i32 + get_display_hours() as i32) * 60;
@@ -534,9 +531,11 @@ pub mod xtensa {
         DELAY: DelayNs,
     {
         let time = hardware::get_time(rtc);
-        let start_display_hour = time.hour() as u8;
+        let mut start_display_hour = time.hour() as u8;
 
-        let start_display_hour = start_display_hour.clamp(0, 24 - super::get_display_hours());
+        if !super::get_next_n_hours_only() {
+            start_display_hour = start_display_hour.clamp(0, 24 - super::get_display_hours());
+        }
 
         crate::display::draw_time_row_header(display, start_display_hour);
         crate::display::draw_base_calendar(display, start_display_hour);

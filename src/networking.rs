@@ -158,12 +158,22 @@ pub async fn calendar_data_req(
         "Making calendar request for date: {}",
         crate::defmt::Debug2Format(&date)
     );
+    let mut start_display_hour = date.hour() as i8;
+    if !crate::display::get_next_n_hours_only() {
+        start_display_hour =
+            start_display_hour.clamp(0, 24 - crate::display::get_display_hours() as i8);
+    }
+
     let start_zoned = date
         .datetime()
         .date()
         .to_zoned(date.time_zone().clone())
+        .unwrap()
+        .checked_add(jiff::Span::new().hours(start_display_hour as i32))
         .unwrap();
-    let end_zoned = start_zoned.checked_add(jiff::Span::new().days(1)).unwrap();
+    let end_zoned = start_zoned
+        .checked_add(jiff::Span::new().hours(crate::display::get_display_hours() as i32))
+        .unwrap();
 
     let start_utc = start_zoned.with_time_zone(TimeZone::UTC).datetime();
     let end_utc = end_zoned.with_time_zone(TimeZone::UTC).datetime();

@@ -158,12 +158,17 @@ async fn main(spawner: Spawner) {
 
     if let Some(config) = &mut stored_config {
         if let Some(display_config) = &mut config.display {
+            crate::display::NEXT_N_HOURS_ONLY.store(
+                display_config.next_n_hours_only,
+                core::sync::atomic::Ordering::Relaxed,
+            );
             crate::display::DISPLAY_HOURS.store(
                 display_config.displayed_hours,
                 core::sync::atomic::Ordering::Relaxed,
             );
             sync_calendars.extend(core::mem::take(&mut display_config.calendars));
         } else {
+            crate::display::NEXT_N_HOURS_ONLY.store(false, core::sync::atomic::Ordering::Relaxed);
             crate::display::DISPLAY_HOURS.store(8, core::sync::atomic::Ordering::Relaxed);
         }
     }
