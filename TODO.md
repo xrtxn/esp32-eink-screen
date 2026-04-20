@@ -1,4 +1,2 @@
 - Variable timezone based on user
-- Fix event time fetching
-- Better error handling on invalid config
 - Limit max calendars (by string length?)
