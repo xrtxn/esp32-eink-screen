@@ -55,8 +55,7 @@ pub struct CaldavCreds {
 pub struct DisplayConfig {
     pub displayed_hours: u8,
     pub calendars: Vec<String>,
-    #[serde(default)]
-    pub next_n_hours_only: bool,
+    pub show_current_day_only: bool,
 }
 
 impl Default for DisplayConfig {
@@ -64,7 +63,7 @@ impl Default for DisplayConfig {
         Self {
             displayed_hours: 18,
             calendars: Vec::new(),
-            next_n_hours_only: false,
+            show_current_day_only: false,
         }
     }
 }
@@ -105,7 +104,7 @@ mod xtensa {
         flash_cell: &Mutex<NoopRawMutex, FlashStorage<'static>>,
     ) -> Option<NvsConfig> {
         let mut borrow = flash_cell.lock().await;
-        let mut data_buffer = [0u8; 3000];
+        let mut data_buffer = [0u8; 2048];
 
         let async_flash = BlockingAsync::new(&mut *borrow);
 

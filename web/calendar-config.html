@@ -103,9 +103,9 @@
                 updateDisplay();
             </script>
 
-            <label for="next-n-hours-switch">
-                <input type="checkbox" id="next-n-hours-switch" role="switch" />
-                Show multiple days
+            <label for="current-day-switch">
+                <input type="checkbox" id="current-day-switch" role="switch" />
+                Only show current day
             </label>
         </div>
 
@@ -193,8 +193,8 @@
                     const displayedHours = document.querySelector(
                         "#display-hours-range",
                     ).value;
-                    const nextNHoursOnly = document.querySelector(
-                        "#next-n-hours-switch",
+                    const showCurrentDayOnly = document.querySelector(
+                        "#current-day-switch",
                     ).checked;
                     console.log("Selected calendars:", selectedCalendars);
                     console.log("Displayed hours:", displayedHours);
@@ -207,7 +207,7 @@
                             body: JSON.stringify({
                                 displayed_hours: parseInt(displayedHours, 10),
                                 calendars: selectedCalendars,
-                                next_n_hours_only: nextNHoursOnly,
+                                show_current_day_only: !showCurrentDayOnly,
                             }),
                         })
                             .then((response) => {

@@ -22,7 +22,7 @@ pub enum VcalEvent {
     DtEnd(String),
 }
 
-#[derive(Eq, PartialEq, PartialOrd, Default, Clone, Debug)]
+#[derive(Eq, PartialEq, Default, Clone, Debug)]
 pub struct VEventData {
     pub summary: Option<String>,
     pub dtstart: Option<Timestamp>,
@@ -30,8 +30,16 @@ pub struct VEventData {
 }
 
 impl VEventData {
+    pub fn new(summary: &str, dtstart: Timestamp, dtend: Timestamp) -> Self {
+        Self {
+            summary: Some(summary.to_string()),
+            dtstart: Some(dtstart),
+            dtend: Some(dtend),
+        }
+    }
+
     /// Returns the event duration, or None if either timestamp is missing.
-    fn duration(&self) -> Option<i64> {
+    pub fn duration(&self) -> Option<i64> {
         match (self.dtstart, self.dtend) {
             (Some(start), Some(end)) => Some(end.as_second() - start.as_second()),
             _ => None,
@@ -39,10 +47,22 @@ impl VEventData {
     }
 }
 
+impl PartialOrd for VEventData {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Ord for VEventData {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        // Longer duration comes first → reverse the comparison (b vs a)
-        other.duration().cmp(&self.duration())
+        // 1. Longer duration first
+        other
+            .duration()
+            .cmp(&self.duration())
+            // 2. Earlier start time first
+            .then_with(|| self.dtstart.cmp(&other.dtstart))
+            // 3. Earlier end time first
+            .then_with(|| self.dtend.cmp(&other.dtend))
     }
 }
 

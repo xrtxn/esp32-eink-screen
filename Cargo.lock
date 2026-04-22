@@ -913,6 +913,7 @@ dependencies = [
  "jiff",
  "log",
  "profont",
+ "vcal-parser",
  "vergen",
  "weact-studio-epd",
 ]

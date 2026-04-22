@@ -158,8 +158,8 @@ async fn main(spawner: Spawner) {
 
     if let Some(config) = &mut stored_config {
         if let Some(display_config) = &mut config.display {
-            crate::display::NEXT_N_HOURS_ONLY.store(
-                display_config.next_n_hours_only,
+            crate::display::SHOW_CURRENT_DAY_ONLY.store(
+                display_config.show_current_day_only,
                 core::sync::atomic::Ordering::Relaxed,
             );
             crate::display::DISPLAY_HOURS.store(
@@ -168,7 +168,8 @@ async fn main(spawner: Spawner) {
             );
             sync_calendars.extend(core::mem::take(&mut display_config.calendars));
         } else {
-            crate::display::NEXT_N_HOURS_ONLY.store(false, core::sync::atomic::Ordering::Relaxed);
+            crate::display::SHOW_CURRENT_DAY_ONLY
+                .store(false, core::sync::atomic::Ordering::Relaxed);
             crate::display::DISPLAY_HOURS.store(8, core::sync::atomic::Ordering::Relaxed);
         }
     }
@@ -337,7 +338,7 @@ async fn run_display_mode(
         net_stack,
         crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
     ));
-    let events = networking::get_events(
+    let mut events = networking::get_events(
         tls.reference(),
         dns_socket,
         tcp_client,
@@ -347,7 +348,7 @@ async fn run_display_mode(
     )
     .await;
 
-    display::write_to_screen(display, driver, events, rtc).await;
+    display::write_to_screen(display, driver, &mut events, rtc).await;
 }
 
 fn run_config_mode(

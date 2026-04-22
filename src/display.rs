@@ -1,4 +1,5 @@
 use core::range::RangeInclusive;
+use core::str::FromStr;
 
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
@@ -45,11 +46,11 @@ const fn calculate_row_padding(start_hour: u8, end_hour: u8) -> i32 {
 }
 
 pub static DISPLAY_HOURS: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(8);
-pub static NEXT_N_HOURS_ONLY: core::sync::atomic::AtomicBool =
+pub static SHOW_CURRENT_DAY_ONLY: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
-pub fn get_next_n_hours_only() -> bool {
-    NEXT_N_HOURS_ONLY.load(core::sync::atomic::Ordering::Relaxed)
+pub fn limit_to_today() -> bool {
+    SHOW_CURRENT_DAY_ONLY.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 pub fn get_display_hours() -> u8 {
@@ -353,14 +354,41 @@ pub(crate) fn draw_event<D>(
 
     let available_height = end_y.saturating_sub(y);
 
-    let single_line_height = EVENT_FONT.character_size.height;
-    let double_line_height = single_line_height + MINI_FONT.character_size.height;
+    const EVENT_LINE_HEIGHT: u32 = EVENT_FONT.character_size.height;
+    const TIME_LINE_HEIGHT: u32 = MINI_FONT.character_size.height;
+    const TITLE_WITH_TIME_HEIGHT: u32 = EVENT_LINE_HEIGHT + TIME_LINE_HEIGHT;
 
-    let oneline = available_height < double_line_height;
+    let oneline = available_height < TITLE_WITH_TIME_HEIGHT;
 
-    if available_height < single_line_height {
-        end_y = y + single_line_height;
+    if available_height < TIME_LINE_HEIGHT {
+        end_y = y + TIME_LINE_HEIGHT;
     }
+
+    let mut owned_str: heapless::String<32> = heapless::String::new();
+
+    {
+        let max_multiline_cnt = available_height - TIME_LINE_HEIGHT / EVENT_LINE_HEIGHT;
+        let mut lines = 0;
+        let mut counted = 0;
+        for c in text.chars().take(owned_str.capacity() - 3) {
+            let char_len = c.len_utf8();
+            // Check if we have room: 3 bytes reserved for "..."
+            if owned_str.len() + char_len + 3 > owned_str.capacity() {
+                break;
+            }
+            if !oneline && counted > 4 && max_multiline_cnt > lines && c.eq(&' ') {
+                owned_str.push('\n').ok();
+                counted = 0;
+                lines += 1;
+            } else {
+                owned_str.push(c).ok();
+                counted += 1;
+            }
+        }
+        if text.chars().count() > owned_str.capacity() - 3 {
+            owned_str.push_str("...").unwrap(); // now safe
+        }
+    };
 
     let time_str: heapless::String<15> =
         hformat!("{}-{}", start.strftime("%H:%M"), end.strftime("%H:%M")).unwrap();
@@ -370,8 +398,10 @@ pub(crate) fn draw_event<D>(
             + calculate_text_width(text.len() as u16, EVENT_FONT)
             + 5
     } else {
+        let max_len = owned_str.lines().map(|line| line.len()).max().unwrap_or(0);
+
         calculate_text_width(time_str.len() as u16, MINI_FONT)
-            .max(calculate_text_width(text.len() as u16, EVENT_FONT))
+            .max(calculate_text_width(max_len as u16, EVENT_FONT))
             + 5
     };
 
@@ -397,7 +427,7 @@ pub(crate) fn draw_event<D>(
     };
 
     let title_text = Text::with_baseline(
-        text,
+        &owned_str,
         title_point,
         CHARACTER_STYLE,
         embedded_graphics::text::Baseline::Top,
@@ -522,7 +552,7 @@ pub mod xtensa {
     pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         display: &mut Display420BlackWhite,
         driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
-        events: alloc::vec::Vec<vcal_parser::vevent::VEventData>,
+        events: &mut alloc::vec::Vec<vcal_parser::vevent::VEventData>,
         rtc: &mut Rtc<'_>,
     ) where
         DI: AsyncWriteOnlyDataCommand,
@@ -533,7 +563,7 @@ pub mod xtensa {
         let time = hardware::get_time(rtc);
         let mut start_display_hour = time.hour() as u8;
 
-        if !super::get_next_n_hours_only() {
+        if !super::limit_to_today() {
             start_display_hour = start_display_hour.clamp(0, 24 - super::get_display_hours());
         }
 
@@ -541,6 +571,9 @@ pub mod xtensa {
         crate::display::draw_base_calendar(display, start_display_hour);
         let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(2));
         let mut spaces = super::OccupiedSpaces::new();
+
+        events.sort();
+
         for event in events
             .iter()
             .filter(|f| f.dtstart.is_some() && f.dtend.is_some())
@@ -560,7 +593,9 @@ pub mod xtensa {
         #[cfg(debug_assertions)]
         crate::display::add_footer_info(display);
 
-        crate::display::draw_time_ticker(display, &time, start_display_hour);
+        if super::limit_to_today() {
+            crate::display::draw_time_ticker(display, &time, start_display_hour);
+        }
         crate::display::draw_sync_time(display, &time);
         driver.full_update(display).await.unwrap();
 

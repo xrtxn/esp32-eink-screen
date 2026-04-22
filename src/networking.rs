@@ -159,7 +159,7 @@ pub async fn calendar_data_req(
         crate::defmt::Debug2Format(&date)
     );
     let mut start_display_hour = date.hour() as i8;
-    if !crate::display::get_next_n_hours_only() {
+    if !crate::display::limit_to_today() {
         start_display_hour =
             start_display_hour.clamp(0, 24 - crate::display::get_display_hours() as i8);
     }

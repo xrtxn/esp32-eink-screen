@@ -6,6 +6,7 @@ extern crate alloc;
 use embedded_graphics::prelude::*;
 use embedded_graphics_simulator::SimulatorDisplay;
 use jiff::{Zoned, civil::DateTime, tz::TimeZone};
+use vcal_parser::vevent::VEventData;
 use weact_studio_epd::Color;
 
 use crate::display::OccupiedSpaces;
@@ -13,16 +14,11 @@ use crate::display::OccupiedSpaces;
 #[path = "../../src/display.rs"]
 mod display;
 
-fn sample_event<'a>(
-    start_time: DateTime,
-    end_time: DateTime,
-    title: &'a str,
-) -> (Zoned, Zoned, &'a str) {
-    let tz = TimeZone::UTC;
-    (
-        start_time.to_zoned(tz.clone()).unwrap(),
-        end_time.to_zoned(tz).unwrap(),
+fn sample_event<'a>(start_time: &str, end_time: &str, title: &'a str) -> VEventData {
+    VEventData::new(
         title,
+        start_time.parse().unwrap(),
+        end_time.parse().unwrap(),
     )
 }
 
@@ -55,65 +51,71 @@ fn main() {
 
     display::draw_time_row_header(&mut display, start_display_hour);
 
-    let mut events: Vec<(Zoned, Zoned, &str)> = vec![
+    vcal_parser::vevent::VEventData::new(
+        "Morning",
+        "2026-07-11T00:00:00+01:00".parse().unwrap(),
+        "2026-07-11T01:30:00+01:00".parse().unwrap(),
+    );
+
+    let mut events: Vec<vcal_parser::vevent::VEventData> = vec![
         sample_event(
-            "2026-07-11T00:00:00".parse().unwrap(),
-            "2026-07-11T01:30:00".parse().unwrap(),
+            "2026-07-11T00:00:00+01:00",
+            "2026-07-11T01:30:00+01:00",
             "Morning",
         ),
         sample_event(
-            "2026-07-11T07:30:00".parse().unwrap(),
-            "2026-07-11T07:40:00".parse().unwrap(),
+            "2026-07-11T07:30:00+01:00",
+            "2026-07-11T07:40:00+01:00",
             "S1",
         ),
         sample_event(
-            "2026-07-11T07:20:00".parse().unwrap(),
-            "2026-07-11T07:30:00".parse().unwrap(),
+            "2026-07-11T07:20:00+01:00",
+            "2026-07-11T07:30:00+01:00",
             "S2",
         ),
         sample_event(
-            "2026-07-11T07:20:00".parse().unwrap(),
-            "2026-07-11T07:40:00".parse().unwrap(),
+            "2026-07-11T07:20:00+01:00",
+            "2026-07-11T07:40:00+01:00",
             "S3",
         ),
         sample_event(
-            "2026-07-11T07:10:00".parse().unwrap(),
-            "2026-07-11T07:20:00".parse().unwrap(),
+            "2026-07-11T07:10:00+01:00",
+            "2026-07-11T07:20:00+01:00",
             "S",
         ),
         sample_event(
-            "2026-07-11T07:40:00".parse().unwrap(),
-            "2026-07-11T08:10:00".parse().unwrap(),
+            "2026-07-11T07:40:00+01:00",
+            "2026-07-11T08:10:00+01:00",
             "SEnd",
         ),
         sample_event(
-            "2026-07-11T07:40:00".parse().unwrap(),
-            "2026-07-11T07:50:00".parse().unwrap(),
+            "2026-07-11T07:40:00+01:00",
+            "2026-07-11T07:50:00+01:00",
             "ST",
         ),
         sample_event(
-            "2026-07-11T08:10:00".parse().unwrap(),
-            "2026-07-11T08:50:00".parse().unwrap(),
+            "2026-07-11T08:10:00+01:00",
+            "2026-07-11T08:50:00+01:00",
             "Breakfast",
         ),
         sample_event(
-            "2026-07-11T08:50:00".parse().unwrap(),
-            "2026-07-11T09:00:00".parse().unwrap(),
-            "Pondering",
+            "2026-07-11T08:50:00+01:00",
+            "2026-07-11T09:00:00+01:00",
+            "Very long name but short",
         ),
         sample_event(
-            "2026-07-11T08:00:00".parse().unwrap(),
-            "2026-07-11T14:00:00".parse().unwrap(),
-            "Work",
+            "2026-07-11T08:00:00+01:00",
+            "2026-07-11T08:45:00+01:00",
+            "Web alkalmazás fejlesztés csoportmunkában",
         ),
         sample_event(
-            "2026-07-11T23:00:00".parse().unwrap(),
-            "2026-07-11T23:59:00".parse().unwrap(),
+            "2026-07-11T23:00:00+01:00",
+            "2026-07-11T23:59:00+01:00",
             "Midnight",
         ),
         sample_event(
-            "2026-07-11T16:00:00".parse().unwrap(),
-            "2026-07-11T17:59:00".parse().unwrap(),
+            "2026-07-11T16:00:00+01:00",
+            "2026-07-11T17:59:00+01:00",
             "Very very very long event name",
         ),
     ];
@@ -127,12 +129,18 @@ fn main() {
     events.sort();
 
     let mut spaces = OccupiedSpaces::new();
-    for (start, end, title) in &events {
+    for event in &events {
         display::draw_event(
             &mut display,
-            start,
-            end,
-            title,
+            &event
+                .dtstart
+                .unwrap()
+                .to_zoned(TimeZone::fixed(jiff::tz::offset(1))),
+            &event
+                .dtend
+                .unwrap()
+                .to_zoned(TimeZone::fixed(jiff::tz::offset(1))),
+            &event.summary.clone().unwrap(),
             start_display_hour,
             &today,
             &mut spaces,
