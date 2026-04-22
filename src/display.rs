@@ -1,5 +1,4 @@
 use core::range::RangeInclusive;
-use core::str::FromStr;
 
 use embedded_graphics::mono_font::{MonoFont, MonoTextStyle};
 use embedded_graphics::prelude::{Dimensions, DrawTarget, OriginDimensions, Point};
@@ -367,16 +366,23 @@ pub(crate) fn draw_event<D>(
     let mut owned_str: heapless::String<32> = heapless::String::new();
 
     {
-        let max_multiline_cnt = available_height - TIME_LINE_HEIGHT / EVENT_LINE_HEIGHT;
+        let max_multiline_cnt =
+            available_height.saturating_sub(TIME_LINE_HEIGHT) / EVENT_LINE_HEIGHT;
         let mut lines = 0;
         let mut counted = 0;
-        for c in text.chars().take(owned_str.capacity() - 3) {
+        let mut truncated = false;
+        for c in text.chars() {
             let char_len = c.len_utf8();
             // Check if we have room: 3 bytes reserved for "..."
             if owned_str.len() + char_len + 3 > owned_str.capacity() {
+                truncated = true;
                 break;
             }
-            if !oneline && counted > 4 && max_multiline_cnt > lines && c.eq(&' ') {
+            if !oneline && counted > 4 && c.eq(&' ') {
+                if lines + 1 >= max_multiline_cnt {
+                    truncated = true;
+                    break;
+                }
                 owned_str.push('\n').ok();
                 counted = 0;
                 lines += 1;
@@ -385,7 +391,7 @@ pub(crate) fn draw_event<D>(
                 counted += 1;
             }
         }
-        if text.chars().count() > owned_str.capacity() - 3 {
+        if truncated || text.chars().count() > owned_str.capacity() - 3 {
             owned_str.push_str("...").unwrap(); // now safe
         }
     };
@@ -439,11 +445,12 @@ pub(crate) fn draw_event<D>(
     let min_x = time_bb.top_left.x.min(title_bb.top_left.x);
     let max_x = (time_bb.top_left.x + time_bb.size.width as i32)
         .max(title_bb.top_left.x + title_bb.size.width as i32);
+    let max_y = (time_bb.top_left.y + time_bb.size.height as i32)
+        .max(title_bb.top_left.y + title_bb.size.height as i32)
+        .max(end_y as i32);
 
-    let mut ebb = Rectangle::with_corners(
-        Point::new(min_x, y as i32),
-        Point::new(max_x as i32, end_y as i32),
-    );
+    let mut ebb =
+        Rectangle::with_corners(Point::new(min_x, y as i32), Point::new(max_x as i32, max_y));
 
     extend_rectangle(&mut ebb);
 
