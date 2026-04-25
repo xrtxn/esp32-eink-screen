@@ -1,2 +1,3 @@
+- Add failsafe, which prevents the device from rebooting rapidly
 - Variable timezone based on user
 - Limit max calendars (by string length?)

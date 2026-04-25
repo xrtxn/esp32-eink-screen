@@ -129,8 +129,6 @@ async fn main(spawner: Spawner) {
     let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
     let flash = storage::init_flash(flash);
 
-    crate::defmt::debug!("Initialized flash storage");
-
     // this affects the remaining stack
     esp_alloc::heap_allocator!(size: 64 * 1024);
     // SSL needs more RAM
@@ -152,7 +150,8 @@ async fn main(spawner: Spawner) {
 
     let mut stored_config = storage::read_config(flash).await;
 
-    crate::defmt::debug!("Config read complete");
+    #[cfg(debug_assertions)]
+    crate::defmt::debug!("Config read complete {:?}", defmt::Debug2Format(&stored_config));
 
     let mut sync_calendars = alloc::vec::Vec::with_capacity(2);
 
@@ -246,8 +245,14 @@ async fn main(spawner: Spawner) {
             let old_count = NETWORK_FAIL_COUNT.load(core::sync::atomic::Ordering::Relaxed);
 
             let should_reset = match boot_type {
-                BootType::Display if old_count <= NETWORK_FAIL_LIMIT => go_to_deep_sleep(&mut rtc),
-                BootType::Display => true,
+                BootType::Display => {
+                    if old_count <= NETWORK_FAIL_LIMIT {
+                        NETWORK_FAIL_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        go_to_deep_sleep(&mut rtc)
+                    } else {
+                        true
+                    }
+                }
                 BootType::Config => network_status == NetworkStatus::Network,
             };
 

@@ -392,7 +392,7 @@ pub(crate) fn draw_event<D>(
             }
         }
         if truncated || text.chars().count() > owned_str.capacity() - 3 {
-            owned_str.push_str("...").unwrap(); // now safe
+            owned_str.push_str("...").unwrap();
         }
     };
 
