@@ -8,7 +8,7 @@
     reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
     holding buffers for the duration of a data transfer."
 )]
-#![allow(clippy::pedantic)]
+#![warn(clippy::large_stack_frames)]
 
 #[cfg(feature = "defmt")]
 pub use ::defmt;
@@ -105,6 +105,7 @@ impl BootType {
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+#[allow(clippy::large_stack_frames, reason = "false positive")]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -151,7 +152,10 @@ async fn main(spawner: Spawner) {
     let mut stored_config = storage::read_config(flash).await;
 
     #[cfg(debug_assertions)]
-    crate::defmt::debug!("Config read complete {:?}", defmt::Debug2Format(&stored_config));
+    crate::defmt::debug!(
+        "Config read complete {:?}",
+        defmt::Debug2Format(&stored_config)
+    );
 
     let mut sync_calendars = alloc::vec::Vec::with_capacity(2);
 
@@ -338,11 +342,17 @@ async fn run_display_mode(
     let caldav = config.caldav.clone().unwrap();
 
     let tls = TLS.init(mbedtls_rs::Tls::new(trng).unwrap());
-    let dns_socket = DNS_SOCKET.init(DnsSocket::new(net_stack));
-    let tcp_client = TCP_CLIENT.init(TcpClient::new(
-        net_stack,
-        crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
-    ));
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let dns_socket = DNS_SOCKET.init_with(|| DnsSocket::new(net_stack));
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let tcp_client = TCP_CLIENT.init_with(|| {
+        TcpClient::new(
+            net_stack,
+            #[allow(clippy::large_stack_frames, reason = "false positive")]
+            crate::networking::CLIENT_STATE
+                .init_with(embassy_net::tcp::client::TcpClientState::new),
+        )
+    });
     let mut events = networking::get_events(
         tls.reference(),
         dns_socket,
@@ -362,13 +372,21 @@ fn run_config_mode(
     flash: &'static Mutex<NoopRawMutex, FlashStorage<'static>>,
     trng: &'static mut esp_hal::rng::Trng,
 ) {
-    let tls = TLS.init(mbedtls_rs::Tls::new(trng).unwrap());
-    let tls_mutex = TLS_MUTEX.init(embassy_sync::mutex::Mutex::new(tls));
-    let dns_socket = DNS_SOCKET.init(DnsSocket::new(net_stack));
-    let tcp_client = TCP_CLIENT.init(TcpClient::new(
-        net_stack,
-        crate::networking::CLIENT_STATE.init(embassy_net::tcp::client::TcpClientState::new()),
-    ));
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let tls = TLS.init_with(|| mbedtls_rs::Tls::new(trng).unwrap());
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let tls_mutex = TLS_MUTEX.init_with(|| embassy_sync::mutex::Mutex::new(tls));
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let dns_socket = DNS_SOCKET.init_with(|| DnsSocket::new(net_stack));
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let tcp_client = TCP_CLIENT.init_with(|| {
+        TcpClient::new(
+            net_stack,
+            #[allow(clippy::large_stack_frames, reason = "false positive")]
+            crate::networking::CLIENT_STATE
+                .init_with(embassy_net::tcp::client::TcpClientState::new),
+        )
+    });
 
     let app = picoserve::make_static!(
         picoserve::AppRouter<server::AppProps>,

@@ -71,9 +71,12 @@ impl AppBuilder for AppProps {
 
         // Reuse existing REQ_BUFFER
         #[cfg(target_arch = "xtensa")]
-        let req_buffer = crate::networking::REQ_BUFFER.init([0u8; 8192]);
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        let req_buffer = crate::networking::REQ_BUFFER.init_with(|| [0u8; 8192]);
         #[cfg(target_arch = "xtensa")]
-        let req_buffer_mutex = &*REQ_MUTEX.init(embassy_sync::mutex::Mutex::new(req_buffer));
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        let req_buffer_mutex =
+            &*REQ_MUTEX.init_with(|| embassy_sync::mutex::Mutex::new(req_buffer));
 
         picoserve::Router::new()
             .route("/", picoserve::routing::get(config_page_handler))
@@ -362,7 +365,7 @@ async fn check_caldav_credentials(
             &origin,
             if path.is_empty() { "/" } else { path },
             credentials,
-            &mut *buf_guard,
+            *buf_guard,
         )
         .await?;
 
@@ -475,9 +478,12 @@ mod xtensa {
         app: &'static picoserve::AppRouter<AppProps>,
     ) -> ! {
         let port = 80;
-        let tcp_rx_buffer = TCP_RX_BUFFERS[task_id].init([0; 1024]);
-        let tcp_tx_buffer = TCP_TX_BUFFERS[task_id].init([0; 1024]);
-        let http_buffer = HTTP_BUFFERS[task_id].init([0; 2048]);
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        let tcp_rx_buffer = TCP_RX_BUFFERS[task_id].init_with(|| [0; 1024]);
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        let tcp_tx_buffer = TCP_TX_BUFFERS[task_id].init_with(|| [0; 1024]);
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        let http_buffer = HTTP_BUFFERS[task_id].init_with(|| [0; 2048]);
 
         picoserve::Server::new(app, &CONFIG, http_buffer)
             .listen_and_serve(task_id, stack, port, tcp_rx_buffer, tcp_tx_buffer)

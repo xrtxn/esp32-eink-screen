@@ -107,9 +107,11 @@ pub async fn get_time(stack: Stack<'_>) -> jiff::Timestamp {
     use sntpc::{NtpContext, get_time};
 
     let rx_meta = RX_META.init([PacketMetadata::EMPTY; 16]);
-    let rx_buffer = RX_BUFFER.init([0; 4096]);
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let rx_buffer = RX_BUFFER.init_with(|| [0; 4096]);
     let tx_meta = TX_META.init([PacketMetadata::EMPTY; 16]);
-    let tx_buffer = TX_BUFFER.init([0; 4096]);
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let tx_buffer = TX_BUFFER.init_with(|| [0; 4096]);
 
     let mut socket = UdpSocket::new(stack, rx_meta, rx_buffer, tx_meta, tx_buffer);
     socket.bind(123).unwrap();
@@ -158,7 +160,7 @@ pub async fn calendar_data_req(
         "Making calendar request for date: {}",
         crate::defmt::Debug2Format(&date)
     );
-    let mut start_display_hour = date.hour() as i8;
+    let mut start_display_hour = date.hour();
     if !crate::display::limit_to_today() {
         start_display_hour =
             start_display_hour.clamp(0, 24 - crate::display::get_display_hours() as i8);
@@ -287,11 +289,11 @@ async fn req(
     req_buffer: &mut [u8; 8192],
 ) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
     let mut request = client
-        .request(reqwless::request::Method::REPORT, &origin)
+        .request(reqwless::request::Method::REPORT, origin)
         .await
         .unwrap()
         .basic_auth(username, password)
-        .path(&path)
+        .path(path)
         .headers(&[("Content-Type", "text/xml; charset=utf-8"), ("Depth", "1")])
         .body(body);
 
@@ -316,7 +318,8 @@ pub(crate) async fn get_events(
     credentials: &CaldavCreds,
     calendar_ids: &[String],
 ) -> alloc::vec::Vec<vcal_parser::vevent::VEventData> {
-    let req_buffer = REQ_BUFFER.init([0u8; 8192]);
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let req_buffer = REQ_BUFFER.init_with(|| [0u8; 8192]);
 
     let time_from_rtc =
         jiff::Timestamp::from_second(rtc.current_time_us() as i64 / 1_000_000).unwrap();

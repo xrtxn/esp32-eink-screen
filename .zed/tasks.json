@@ -45,6 +45,24 @@
     "tags": ["rust-run"],
   },
   {
+    "label": "Espflash monitor",
+    "command": "nix",
+    "args": [
+      "develop",
+      "--command",
+      "espflash",
+      "monitor",
+      "--log-format",
+      "defmt",
+      "--elf",
+      "target/xtensa-esp32s3-none-elf/debug/esp32-thesis",
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "tags": ["rust-run"],
+  },
+  {
     "label": "Wipe NVS",
     "command": "nix",
     "args": [

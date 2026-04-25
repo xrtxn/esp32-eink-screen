@@ -75,7 +75,8 @@ pub async fn dhcp_server_task(stack: embassy_net::Stack<'static>) {
     let server_options = edge_dhcp::server::ServerOptions::new(server_ip, Some(&mut gw_buf));
     let mut server = edge_dhcp::server::Server::<_, 4>::new_with_et(server_ip);
 
-    let buffers = DHCP_UDP_BUFFERS.init(UdpBuffers::new());
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let buffers = DHCP_UDP_BUFFERS.init_with(UdpBuffers::new);
     let udp = Udp::new(stack, buffers);
     let local =
         core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::UNSPECIFIED), 67);
@@ -128,7 +129,9 @@ pub fn start_ap(
         .with_power_save_mode(esp_radio::wifi::PowerSaveMode::Minimum);
 
     let (wifi_controller, interfaces) = esp_radio::wifi::new(
-        RADIO_CONTROLLER.init(esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        RADIO_CONTROLLER
+            .init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
         wifi,
         wifi_config,
     )
@@ -145,14 +148,16 @@ pub fn start_ap(
 
     let _trng_source = esp_hal::rng::TrngSource::new(rng_per, adc1);
 
-    let trng = TRNG.init(esp_hal::rng::Trng::try_new().unwrap());
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let trng = TRNG.init_with(|| esp_hal::rng::Trng::try_new().unwrap());
     let seed = (trng.random() as u64) << 32 | trng.random() as u64;
 
     // Init network stack
     let (net_stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(embassy_net::StackResources::<NETWORK_STACK_NUM>::new()),
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        NETWORK_STACK.init_with(embassy_net::StackResources::<NETWORK_STACK_NUM>::new),
         seed,
     );
 
@@ -174,7 +179,9 @@ pub fn start_con(
         .with_power_save_mode(esp_radio::wifi::PowerSaveMode::Minimum);
 
     let (wifi_controller, interfaces) = esp_radio::wifi::new(
-        RADIO_CONTROLLER.init(esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        RADIO_CONTROLLER
+            .init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi controller")),
         wifi,
         wifi_config,
     )
@@ -186,14 +193,16 @@ pub fn start_con(
 
     let _trng_source = esp_hal::rng::TrngSource::new(rng_per, adc1);
 
-    let trng = TRNG.init(esp_hal::rng::Trng::try_new().unwrap());
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let trng = TRNG.init_with(|| esp_hal::rng::Trng::try_new().unwrap());
     let seed = (trng.random() as u64) << 32 | trng.random() as u64;
 
     // Init network stack
     let (net_stack, runner) = embassy_net::new(
         wifi_interface,
         config,
-        NETWORK_STACK.init(embassy_net::StackResources::<NETWORK_STACK_NUM>::new()),
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        NETWORK_STACK.init_with(embassy_net::StackResources::<NETWORK_STACK_NUM>::new),
         seed,
     );
 

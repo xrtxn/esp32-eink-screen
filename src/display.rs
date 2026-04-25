@@ -315,11 +315,11 @@ pub(crate) fn draw_event<D>(
     D: DrawTarget<Color = EpdColor> + OriginDimensions,
     D::Error: core::fmt::Debug,
 {
-    let start_days_diff = start.date().since(*today).unwrap().get_days() as i32;
+    let start_days_diff = start.date().since(*today).unwrap().get_days();
     let start_mins_from_midnight =
         start_days_diff * 24 * 60 + start.hour() as i32 * 60 + start.minute() as i32;
 
-    let end_days_diff = end.date().since(*today).unwrap().get_days() as i32;
+    let end_days_diff = end.date().since(*today).unwrap().get_days();
     let end_mins_from_midnight =
         end_days_diff * 24 * 60 + end.hour() as i32 * 60 + end.minute() as i32;
 
@@ -559,7 +559,7 @@ pub mod xtensa {
     pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
         display: &mut Display420BlackWhite,
         driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
-        events: &mut alloc::vec::Vec<vcal_parser::vevent::VEventData>,
+        events: &mut [vcal_parser::vevent::VEventData],
         rtc: &mut Rtc<'_>,
     ) where
         DI: AsyncWriteOnlyDataCommand,

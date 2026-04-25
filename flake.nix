@@ -48,6 +48,7 @@
 
               pkgs.bacon
               pkgs.pre-commit
+              pkgs.esp-generate
             ];
 
             shellHook = ''

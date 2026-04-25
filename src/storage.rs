@@ -95,7 +95,8 @@ mod xtensa {
     pub(crate) fn init_flash(
         flash: FlashStorage<'static>,
     ) -> &'static Mutex<NoopRawMutex, FlashStorage<'static>> {
-        FLASH.init(Mutex::new(flash))
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        FLASH.init_with(|| Mutex::new(flash))
     }
 
     impl sequential_storage::map::PostcardValue<'_> for NvsConfig {}
@@ -114,13 +115,10 @@ mod xtensa {
             sequential_storage::cache::NoCache::new(),
         );
 
-        let nvs_config = ms
-            .fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
+        ms.fetch_item::<NvsConfig>(&mut data_buffer, &CONFIG_KEY)
             .await
             .ok()
-            .flatten();
-
-        nvs_config
+            .flatten()
     }
 
     pub(crate) async fn write_config(
