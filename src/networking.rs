@@ -239,7 +239,7 @@ pub async fn calendar_data_req(
         Err(e) => {
             crate::defmt::error!("Failed to parse URL: {}", crate::defmt::Debug2Format(&e));
             crate::BootType::set(crate::BootType::Config);
-            esp_hal::system::software_reset();
+            crate::wifi::stop_wifi_and_reset().await;
         }
     };
 

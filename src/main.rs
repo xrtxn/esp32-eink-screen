@@ -43,7 +43,6 @@ use portable_atomic::{AtomicU8, AtomicU32};
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
 use weact_studio_epd::graphics::Display420BlackWhite;
 
-use crate::hardware::go_to_deep_sleep;
 use crate::server::{NetworkStatus, WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
 
@@ -194,7 +193,7 @@ async fn main(spawner: Spawner) {
                 #[cfg(not(debug_assertions))]
                 {
                     BootType::set(BootType::Config);
-                    esp_hal::system::software_reset();
+                    crate::wifi::stop_wifi_and_reset().await;
                 }
             }
         };
@@ -202,7 +201,7 @@ async fn main(spawner: Spawner) {
         if config.wifi.is_none() || config.caldav.is_none() {
             crate::defmt::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
             BootType::set(BootType::Config);
-            esp_hal::system::software_reset();
+            crate::wifi::stop_wifi_and_reset().await;
         }
 
         let wifi_creds = config.wifi.clone().unwrap();
@@ -252,7 +251,7 @@ async fn main(spawner: Spawner) {
                 BootType::Display => {
                     if old_count <= NETWORK_FAIL_LIMIT {
                         NETWORK_FAIL_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        go_to_deep_sleep(&mut rtc)
+                        crate::wifi::stop_wifi_and_reset().await
                     } else {
                         true
                     }
@@ -266,8 +265,12 @@ async fn main(spawner: Spawner) {
                 if let Some(display_config) = &mut config.display {
                     display_config.calendars = sync_calendars;
                 }
-                storage::write_config(flash, config).await;
-                esp_hal::system::software_reset();
+                join(
+                    storage::write_config(flash, config),
+                    crate::wifi::stop_wifi_and_reset(),
+                )
+                .await;
+                unreachable!()
             }
         }
     }
@@ -363,7 +366,11 @@ async fn run_display_mode(
     )
     .await;
 
-    display::write_to_screen(display, driver, &mut events, rtc).await;
+    join(
+        crate::wifi::stop_wifi(),
+        display::write_to_screen(display, driver, &mut events, rtc),
+    )
+    .await;
 }
 
 fn run_config_mode(

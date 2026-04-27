@@ -58,5 +58,5 @@ pub async fn button_task(mut button: Input<'static>) {
             },
         )
         .unwrap();
-    esp_hal::system::software_reset();
+    crate::wifi::stop_wifi_and_reset().await;
 }

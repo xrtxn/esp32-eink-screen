@@ -606,6 +606,8 @@ pub mod xtensa {
         crate::display::draw_sync_time(display, &time);
         driver.full_update(display).await.unwrap();
 
+        crate::wifi::wait_until_wifi_stop().await;
+
         crate::hardware::go_to_deep_sleep(rtc);
     }
 }
