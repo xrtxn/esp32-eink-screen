@@ -26,7 +26,8 @@ pub(crate) async fn init_display(
     let spi_bus = Spi::new(
         spi_pin,
         Config::default()
-            .with_frequency(Rate::from_mhz(4))
+            // SSD1683 supports up to 20mhz
+            .with_frequency(Rate::from_mhz(20))
             .with_mode(Mode::_0),
     )
     .unwrap()
