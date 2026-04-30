@@ -228,15 +228,18 @@ where
                                                 if let Some(vevent) = vevent {
                                                     match vevent {
                                                         vcal_parser::vevent::VcalEvent::Begin(
-                                                            _,
+                                                            name,
                                                         ) => {
-                                                            cal_data = VEventData::default();
+                                                            if name == "VEVENT" {
+                                                                cal_data = VEventData::default();
+                                                            }
                                                         }
-                                                        vcal_parser::vevent::VcalEvent::End(_) => {
-                                                            events.push(core::mem::take(
-                                                                &mut cal_data,
-                                                            ));
-                                                            break;
+                                                        vcal_parser::vevent::VcalEvent::End(name) => {
+                                                            if name == "VEVENT" {
+                                                                events.push(core::mem::take(
+                                                                    &mut cal_data,
+                                                                ));
+                                                            }
                                                         }
                                                         vcal_parser::vevent::VcalEvent::Summary(
                                                             summary,
@@ -258,6 +261,9 @@ where
                                                     }
                                                 }
                                                 txt = rem;
+                                                if txt.is_empty() {
+                                                    break;
+                                                }
                                             }
                                             Err(e) => {
                                                 crate::defmt::error!(
@@ -271,6 +277,7 @@ where
                             }
                             _ => (),
                         }
+                        parsed_bytes += current_str.len() - remaining.len();
                         current_str = remaining;
                     }
                     Err(nom::Err::Incomplete(_)) => {
