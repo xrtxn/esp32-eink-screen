@@ -18,6 +18,7 @@ pub struct NvsConfig {
 }
 
 impl NvsConfig {
+    #[cfg(debug_assertions)]
     pub fn new(wifi: Option<WifiCreds>) -> Self {
         Self {
             wifi,
@@ -35,6 +36,7 @@ pub struct WifiCreds {
 }
 
 impl WifiCreds {
+    #[cfg(debug_assertions)]
     pub fn new(ssid: &str, password: &str) -> Self {
         Self {
             ssid: heapless::String::try_from(ssid).unwrap(),

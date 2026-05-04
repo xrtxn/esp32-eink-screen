@@ -56,6 +56,7 @@ pub fn get_display_hours() -> u8 {
     DISPLAY_HOURS.load(core::sync::atomic::Ordering::Relaxed)
 }
 
+#[cfg(debug_assertions)]
 pub(crate) fn add_footer_info<D>(display: &mut D)
 where
     D: DrawTarget<Color = EpdColor> + OriginDimensions,

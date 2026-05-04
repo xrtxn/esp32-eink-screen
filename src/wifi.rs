@@ -36,139 +36,149 @@ static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource> = StaticCell::new();
 #[embassy_executor::task]
 pub async fn connection(
     mut controller: WifiController<'static>,
+    mut runner: Runner<'static, WifiDevice<'static>>,
     ssid: heapless::String<32>,
     pass: heapless::String<32>,
 ) {
     crate::defmt::info!("Device capabilities: {:?}", controller.capabilities());
-    loop {
-        if STOP_SIGNAL.signaled() {
-            let _ = controller.stop_async().await;
-            STOPPED_SIGNAL.signal(());
-            return;
-        }
 
-        if esp_radio::wifi::sta_state() == WifiStaState::Connected {
-            // wait until we're no longer connected
+    let connection_fut = async {
+        loop {
+            if STOP_SIGNAL.signaled() {
+                return;
+            }
+
+            if esp_radio::wifi::sta_state() == WifiStaState::Connected {
+                // wait until we're no longer connected
+                match embassy_futures::select::select(
+                    controller.wait_for_event(WifiEvent::StaDisconnected),
+                    STOP_SIGNAL.wait(),
+                )
+                .await
+                {
+                    embassy_futures::select::Either::First(_) => {
+                        crate::defmt::warn!("Disconnected, retrying...");
+                        Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
+                    }
+                    embassy_futures::select::Either::Second(_) => return,
+                }
+            } else {
+                if !matches!(controller.is_started(), Ok(true)) {
+                    let station_config = ModeConfig::Client(
+                        ClientConfig::default()
+                            .with_ssid(ssid.to_string())
+                            .with_password(pass.to_string()),
+                    );
+                    controller.set_config(&station_config).unwrap();
+                    crate::defmt::info!("Starting wifi");
+                    controller.start_async().await.unwrap();
+                    crate::defmt::info!("Wifi started!");
+                }
+
+                match embassy_futures::select::select(
+                    controller.connect_async(),
+                    STOP_SIGNAL.wait(),
+                )
+                .await
+                {
+                    embassy_futures::select::Either::First(Ok(())) => {
+                        crate::defmt::info!("Wifi connected!")
+                    }
+                    embassy_futures::select::Either::First(Err(e)) => {
+                        crate::defmt::error!("Failed to connect to wifi: {:?}", e);
+                        Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
+                    }
+                    embassy_futures::select::Either::Second(_) => return,
+                }
+            }
+        }
+    };
+
+    // run both futures. if connection_fut exits, runner is dropped.
+    embassy_futures::select::select(runner.run(), connection_fut).await;
+
+    // device is dropped cleanly. now we can stop the controller.
+    let _ = controller.stop_async().await;
+    STOPPED_SIGNAL.signal(());
+}
+
+#[embassy_executor::task]
+pub async fn ap_task(
+    mut controller: WifiController<'static>,
+    mut runner: Runner<'static, WifiDevice<'static>>,
+    stack: embassy_net::Stack<'static>,
+) {
+    crate::defmt::info!("Device capabilities: {:?}", controller.capabilities());
+
+    let ap_fut = async {
+        loop {
+            if STOP_SIGNAL.signaled() {
+                return;
+            }
+            if !matches!(controller.is_started(), Ok(true)) {
+                let ap_config = ModeConfig::AccessPoint(
+                    AccessPointConfig::default()
+                        .with_max_connections(1)
+                        .with_auth_method(esp_radio::wifi::AuthMethod::Wpa2Wpa3Personal)
+                        .with_ssid(alloc::string::String::from(env!("AP_SSID")))
+                        .with_password(alloc::string::String::from(env!("AP_PASS"))),
+                );
+                controller.set_config(&ap_config).unwrap();
+                crate::defmt::info!("Starting AP");
+                controller.start_async().await.unwrap();
+                crate::defmt::info!("AP started!");
+            }
             match embassy_futures::select::select(
-                controller.wait_for_event(WifiEvent::StaDisconnected),
+                controller.wait_for_event(WifiEvent::ApStop),
                 STOP_SIGNAL.wait(),
             )
             .await
             {
                 embassy_futures::select::Either::First(_) => {
-                    crate::defmt::warn!("Disconnected, retrying...");
-                    Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
+                    crate::defmt::warn!("AP stopped, restarting...");
+                    Timer::after(Duration::from_millis(1000)).await;
                 }
-                embassy_futures::select::Either::Second(_) => {
-                    let _ = controller.stop_async().await;
-                    STOPPED_SIGNAL.signal(());
-                    return;
-                }
+                embassy_futures::select::Either::Second(_) => return,
             }
         }
+    };
 
-        if !matches!(controller.is_started(), Ok(true)) {
-            let station_config = ModeConfig::Client(
-                ClientConfig::default()
-                    .with_ssid(ssid.to_string())
-                    .with_password(pass.to_string()),
-            );
-            controller.set_config(&station_config).unwrap();
-            crate::defmt::info!("Starting wifi");
-            controller.start_async().await.unwrap();
-            crate::defmt::info!("Wifi started!");
-        }
+    let dhcp_fut = async {
+        let server_ip = core::net::Ipv4Addr::from_octets(AP_IP_ADDR);
+        let mut gw_buf = [server_ip];
+        let server_options = edge_dhcp::server::ServerOptions::new(server_ip, Some(&mut gw_buf));
+        let mut server = edge_dhcp::server::Server::<_, 4>::new_with_et(server_ip);
 
-        match embassy_futures::select::select(controller.connect_async(), STOP_SIGNAL.wait()).await
-        {
-            embassy_futures::select::Either::First(Ok(())) => {
-                crate::defmt::info!("Wifi connected!")
-            }
-            embassy_futures::select::Either::First(Err(e)) => {
-                crate::defmt::error!("Failed to connect to wifi: {:?}", e);
-                Timer::after(Duration::from_millis(WIFI_RETRY_DELAY_MS)).await;
-            }
-            embassy_futures::select::Either::Second(_) => {
-                let _ = controller.stop_async().await;
-                STOPPED_SIGNAL.signal(());
-                return;
-            }
-        }
-    }
-}
+        #[allow(clippy::large_stack_frames, reason = "false positive")]
+        let buffers = DHCP_UDP_BUFFERS.init_with(UdpBuffers::new);
+        let udp = Udp::new(stack, buffers);
+        let local =
+            core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::UNSPECIFIED), 67);
+        let mut socket = udp
+            .bind(local)
+            .await
+            .expect("DHCP: failed to bind to port 67");
 
-#[embassy_executor::task]
-pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
-    runner.run().await;
-}
+        let mut buf = [0u8; 1500];
 
-#[embassy_executor::task]
-pub async fn dhcp_server_task(stack: embassy_net::Stack<'static>) {
-    let server_ip = core::net::Ipv4Addr::from_octets(AP_IP_ADDR);
-    let mut gw_buf = [server_ip];
-    let server_options = edge_dhcp::server::ServerOptions::new(server_ip, Some(&mut gw_buf));
-    let mut server = edge_dhcp::server::Server::<_, 4>::new_with_et(server_ip);
-
-    #[allow(clippy::large_stack_frames, reason = "false positive")]
-    let buffers = DHCP_UDP_BUFFERS.init_with(UdpBuffers::new);
-    let udp = Udp::new(stack, buffers);
-    let local =
-        core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::UNSPECIFIED), 67);
-    let mut socket = udp
-        .bind(local)
-        .await
-        .expect("DHCP: failed to bind to port 67");
-
-    let mut buf = [0u8; 1500];
-
-    loop {
-        if let Err(e) =
-            edge_dhcp::io::server::run(&mut server, &server_options, &mut socket, &mut buf).await
-        {
-            crate::defmt::error!("DHCP server error: {:?}", e);
-        }
-    }
-}
-
-#[embassy_executor::task]
-pub async fn ap_task(mut controller: WifiController<'static>) {
-    crate::defmt::info!("Device capabilities: {:?}", controller.capabilities());
-    loop {
-        if STOP_SIGNAL.signaled() {
-            let _ = controller.stop_async().await;
-            STOPPED_SIGNAL.signal(());
-            return;
-        }
-        if !matches!(controller.is_started(), Ok(true)) {
-            let ap_config = ModeConfig::AccessPoint(
-                AccessPointConfig::default()
-                    .with_max_connections(1)
-                    .with_auth_method(esp_radio::wifi::AuthMethod::Wpa2Wpa3Personal)
-                    .with_ssid(alloc::string::String::from(env!("AP_SSID")))
-                    .with_password(alloc::string::String::from(env!("AP_PASS"))),
-            );
-            controller.set_config(&ap_config).unwrap();
-            crate::defmt::info!("Starting AP");
-            controller.start_async().await.unwrap();
-            crate::defmt::info!("AP started!");
-        }
-        match embassy_futures::select::select(
-            controller.wait_for_event(WifiEvent::ApStop),
-            STOP_SIGNAL.wait(),
-        )
-        .await
-        {
-            embassy_futures::select::Either::First(_) => {
-                crate::defmt::warn!("AP stopped, restarting...");
-                Timer::after(Duration::from_millis(1000)).await;
-            }
-            embassy_futures::select::Either::Second(_) => {
-                let _ = controller.stop_async().await;
-                STOPPED_SIGNAL.signal(());
-                return;
+        loop {
+            if let Err(e) =
+                edge_dhcp::io::server::run(&mut server, &server_options, &mut socket, &mut buf)
+                    .await
+            {
+                crate::defmt::error!("DHCP server error: {:?}", e);
             }
         }
-    }
+    };
+
+    embassy_futures::select::select(
+        runner.run(),
+        embassy_futures::select::select(dhcp_fut, ap_fut),
+    )
+    .await;
+
+    let _ = controller.stop_async().await;
+    STOPPED_SIGNAL.signal(());
 }
 
 pub fn start_ap(
@@ -213,9 +223,12 @@ pub fn start_ap(
         seed,
     );
 
-    spawner.spawn(ap_task(wifi_controller)).ok();
-    spawner.spawn(net_task(runner)).ok();
-    spawner.spawn(dhcp_server_task(net_stack)).ok();
+    STOP_SIGNAL.reset();
+    STOPPED_SIGNAL.reset();
+
+    spawner
+        .spawn(ap_task(wifi_controller, runner, net_stack))
+        .ok();
 
     WIFI_STARTED.store(true, core::sync::atomic::Ordering::Relaxed);
     (net_stack, trng)
@@ -259,14 +272,17 @@ pub fn start_con(
         seed,
     );
 
+    STOP_SIGNAL.reset();
+    STOPPED_SIGNAL.reset();
+
     spawner
         .spawn(connection(
             wifi_controller,
+            runner,
             wifi_creds.ssid,
             wifi_creds.password,
         ))
         .ok();
-    spawner.spawn(net_task(runner)).ok();
 
     WIFI_STARTED.store(true, core::sync::atomic::Ordering::Relaxed);
     (net_stack, trng)
