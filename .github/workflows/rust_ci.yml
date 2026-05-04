@@ -13,11 +13,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  WIFI_SSID: placeholder
-  WIFI_PASS: placeholder
-  ORIGIN: placeholder
-  CALDAV_USER: placeholder
-  CALDAV_PASS: placeholder
   AP_SSID: placeholder
   AP_PASS: placeholder
 

@@ -229,21 +229,6 @@ fn load_env() {
 
     println!("cargo:rerun-if-changed=.env");
 
-    if let Ok(val) = env::var("WIFI_SSID") {
-        println!("cargo:rustc-env=WIFI_SSID={}", val);
-    }
-    if let Ok(val) = env::var("WIFI_PASS") {
-        println!("cargo:rustc-env=WIFI_PASS={}", val);
-    }
-    if let Ok(val) = env::var("ORIGIN") {
-        println!("cargo:rustc-env=ORIGIN={}", val);
-    }
-    if let Ok(val) = env::var("CALDAV_USER") {
-        println!("cargo:rustc-env=CALDAV_USER={}", val);
-    }
-    if let Ok(val) = env::var("CALDAV_PASS") {
-        println!("cargo:rustc-env=CALDAV_PASS={}", val);
-    }
     if let Ok(val) = env::var("AP_SSID") {
         println!("cargo:rustc-env=AP_SSID={}", val);
     }
