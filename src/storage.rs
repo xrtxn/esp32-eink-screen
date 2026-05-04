@@ -17,32 +17,11 @@ pub struct NvsConfig {
     pub display: Option<DisplayConfig>,
 }
 
-impl NvsConfig {
-    #[cfg(debug_assertions)]
-    pub fn new(wifi: Option<WifiCreds>) -> Self {
-        Self {
-            wifi,
-            caldav: None,
-            display: None,
-        }
-    }
-}
-
 #[cfg_attr(feature = "defmt", derive(crate::defmt::Format))]
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct WifiCreds {
     pub ssid: heapless::String<32>,
     pub password: heapless::String<32>,
-}
-
-impl WifiCreds {
-    #[cfg(debug_assertions)]
-    pub fn new(ssid: &str, password: &str) -> Self {
-        Self {
-            ssid: heapless::String::try_from(ssid).unwrap(),
-            password: heapless::String::try_from(password).unwrap(),
-        }
-    }
 }
 
 #[cfg_attr(feature = "defmt", derive(crate::defmt::Format))]

@@ -182,19 +182,8 @@ async fn main(spawner: Spawner) {
         let config = match stored_config.clone() {
             Some(config) => config,
             _ => {
-                #[cfg(debug_assertions)]
-                {
-                    crate::defmt::warn!(
-                        "No config found; using compile-time credentials (debug build)"
-                    );
-                    let wifi_creds = storage::WifiCreds::new(env!("WIFI_SSID"), env!("WIFI_PASS"));
-                    NvsConfig::new(Some(wifi_creds))
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    BootType::set(BootType::Config);
-                    crate::wifi::stop_wifi_and_reset().await;
-                }
+                BootType::set(BootType::Config);
+                crate::wifi::stop_wifi_and_reset().await;
             }
         };
 
