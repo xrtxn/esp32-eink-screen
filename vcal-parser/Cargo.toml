@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 nom = { version = "8", default-features = false, features = ["alloc"] }
-jiff = { version = "0.2", default-features = false, features = ["alloc"] }
+jiff = { version = "0.2", default-features = false }
 heapless = "0.9"
 log = "0.4"
 serde = { version = "1.0.*", default-features = false, features = ["derive", "alloc"] }
 defmt = "1.0.1"
+thiserror = { version = "2.0.18", default-features = false }

@@ -1,6 +1,6 @@
 use vcal_parser::{
     calendars::CalendarData,
-    vevent::{VEventData, parse_date},
+    vevent::{VEventData, parse_datetime},
 };
 
 /// The internal nom parser for calendar bodies
@@ -234,7 +234,9 @@ where
                                                                 cal_data = VEventData::default();
                                                             }
                                                         }
-                                                        vcal_parser::vevent::VcalEvent::End(name) => {
+                                                        vcal_parser::vevent::VcalEvent::End(
+                                                            name,
+                                                        ) => {
                                                             if name == "VEVENT" {
                                                                 events.push(core::mem::take(
                                                                     &mut cal_data,
@@ -250,13 +252,14 @@ where
                                                             ref dtstart,
                                                         ) => {
                                                             cal_data.dtstart =
-                                                                Some(parse_date(dtstart.as_str()));
+                                                                parse_datetime(dtstart.as_str())
+                                                                    .ok();
                                                         }
                                                         vcal_parser::vevent::VcalEvent::DtEnd(
                                                             ref dtend,
                                                         ) => {
                                                             cal_data.dtend =
-                                                                Some(parse_date(dtend.as_str()));
+                                                                parse_datetime(dtend.as_str()).ok();
                                                         }
                                                     }
                                                 }

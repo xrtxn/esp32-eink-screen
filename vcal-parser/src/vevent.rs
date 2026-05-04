@@ -13,6 +13,22 @@ use nom::{
     combinator::opt,
 };
 
+#[derive(thiserror::Error, Debug)]
+pub enum ParserErrors {
+    #[error("Only datetime format is supported")]
+    DateOnly,
+    #[error("Invalid date format: {0}")]
+    InvalidDateFormat(String),
+    #[error("Jiff parsing error: {0}")]
+    JiffParsingError(alloc::string::String),
+}
+
+impl From<jiff::Error> for ParserErrors {
+    fn from(err: jiff::Error) -> Self {
+        ParserErrors::JiffParsingError(err.to_string())
+    }
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub enum VcalEvent {
     Begin(String),
@@ -66,17 +82,20 @@ impl Ord for VEventData {
     }
 }
 
-pub fn parse_date(dt: &str) -> Timestamp {
+pub fn parse_datetime(dt: &str) -> Result<Timestamp, ParserErrors> {
+    defmt::info!("Parsing date: {}", dt);
     use jiff::fmt::strtime;
-    let s = dt.strip_suffix('Z').unwrap_or(dt);
-    let civil_dt = strtime::parse("%Y%m%dT%H%M%S", s)
-        .unwrap()
-        .to_datetime()
-        .unwrap();
-    civil_dt
-        .to_zoned(jiff::tz::TimeZone::UTC)
-        .unwrap()
-        .timestamp()
+
+    // when the event is whole day, like 20260505
+    if dt.len() == 8 {
+        Err(ParserErrors::DateOnly)
+    } else if dt.len() == 16 {
+        let s = dt.strip_suffix('Z').unwrap();
+        let civil_dt = strtime::parse("%Y%m%dT%H%M%S", s)?.to_datetime()?;
+        Ok(civil_dt.to_zoned(jiff::tz::TimeZone::UTC)?.timestamp())
+    } else {
+        Err(ParserErrors::InvalidDateFormat(dt.to_string()))
+    }
 }
 
 fn property_name(input: &str) -> IResult<&str, &str> {
