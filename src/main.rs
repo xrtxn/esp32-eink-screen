@@ -38,6 +38,7 @@ use esp_hal::{
     spi::master::Spi,
 };
 use esp_storage::FlashStorage;
+//use mbedtls_rs::sys::hook::backend::esp::EspAccel;
 use picoserve::AppBuilder;
 use portable_atomic::{AtomicU8, AtomicU32};
 use weact_studio_epd::WeActStudio420BlackWhiteDriver;
@@ -117,8 +118,6 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    let w = peripherals.WIFI;
-
     hardware::apply_wakeup_boot_type();
 
     let prev_boot_count = DISPLAY_SLEEP_COUNT.load(core::sync::atomic::Ordering::Relaxed);
@@ -185,6 +184,8 @@ async fn main(spawner: Spawner) {
 
     crate::defmt::info!("Boot type: {:?}", boot_type);
 
+    let wifi = peripherals.WIFI;
+
     let (net_stack, trng, ncreds, network_status) = if boot_type == BootType::Display {
         let config = match stored_config.clone() {
             Some(config) => config,
@@ -204,7 +205,7 @@ async fn main(spawner: Spawner) {
         let ncreds = Some(config);
 
         let (net_stack, trng) =
-            wifi::start_con(spawner, w, wifi_creds, peripherals.RNG, peripherals.ADC1);
+            wifi::start_con(spawner, wifi, wifi_creds, peripherals.RNG, peripherals.ADC1);
         (net_stack, trng, ncreds, NetworkStatus::Network)
     } else {
         let ncreds = stored_config.clone();
@@ -212,15 +213,16 @@ async fn main(spawner: Spawner) {
         let (net_stack, trng, network_status) = if let Some(config) = stored_config.clone() {
             if let Some(creds) = config.wifi {
                 let (net_stack, trng) =
-                    wifi::start_con(spawner, w, creds, peripherals.RNG, peripherals.ADC1);
+                    wifi::start_con(spawner, wifi, creds, peripherals.RNG, peripherals.ADC1);
                 (net_stack, trng, NetworkStatus::Network)
             } else {
                 let (net_stack, trng) =
-                    wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
+                    wifi::start_ap(spawner, wifi, peripherals.RNG, peripherals.ADC1);
                 (net_stack, trng, NetworkStatus::AccessPoint)
             }
         } else {
-            let (net_stack, trng) = wifi::start_ap(spawner, w, peripherals.RNG, peripherals.ADC1);
+            let (net_stack, trng) =
+                wifi::start_ap(spawner, wifi, peripherals.RNG, peripherals.ADC1);
             (net_stack, trng, NetworkStatus::AccessPoint)
         };
 

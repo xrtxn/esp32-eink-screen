@@ -85,8 +85,9 @@ embassy-embedded-hal = "0.5.0"
 heapless = { version = "0.9.2", features = ["serde"] }
 
 # Caldav
-reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="main", default-features = false, features = ["mbedtls-rs", ] }
+reqwless = { git = "https://github.com/xrtxn/reqwless.git", branch="main", default-features = false, features = ["mbedtls-rs"] }
 mbedtls-rs = { git = "https://github.com/esp-rs/mbedtls-rs.git", features = [] }
+mbedtls-rs-sys = { git = "https://github.com/esp-rs/mbedtls-rs.git", features = [] }
 roxmltree = { version = "0.21.1", default-features = false }
 vcal-parser = { path = "./vcal-parser" }
 jiff = { version = "0.2.22", default-features = false, features = ["alloc"] }
@@ -96,7 +97,7 @@ sntpc = { version = "0.8", default-features = false }
 sntpc-net-embassy = "0.8"
 
 # Web server
-picoserve = { version = "0.18.0", features = ["embassy",  "alloc", "json"] }
+picoserve = { version = "=0.18.0", features = ["embassy",  "alloc", "json"] }
 
 # DHCP server (for AP mode)
 edge-dhcp = { version = "0.7", features = [] }

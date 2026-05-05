@@ -309,7 +309,6 @@ async fn req(
     cal
 }
 
-// todo pass http client
 pub(crate) async fn get_events(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
