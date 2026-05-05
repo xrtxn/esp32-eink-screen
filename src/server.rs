@@ -46,14 +46,14 @@ pub struct AppProps {
         storage::FlashStorage<'static>,
     >,
     #[cfg(target_arch = "xtensa")]
-    pub tls_mutex: &'static embassy_sync::mutex::Mutex<
+    pub http_client_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
-        &'static mut mbedtls_rs::Tls<'static>,
+        reqwless::client::HttpClient<
+            'static,
+            embassy_net::tcp::client::TcpClient<'static, 1, 4096, 4096>,
+            embassy_net::dns::DnsSocket<'static>,
+        >,
     >,
-    #[cfg(target_arch = "xtensa")]
-    pub dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
-    #[cfg(target_arch = "xtensa")]
-    pub tcp_client: &'static embassy_net::tcp::client::TcpClient<'static, 1, 4096, 4096>,
 }
 
 impl AppBuilder for AppProps {
@@ -63,11 +63,7 @@ impl AppBuilder for AppProps {
         #[cfg(target_arch = "xtensa")]
         let flash = self.flash_storage;
         #[cfg(target_arch = "xtensa")]
-        let tls_mutex = self.tls_mutex;
-        #[cfg(target_arch = "xtensa")]
-        let dns_socket = self.dns_socket;
-        #[cfg(target_arch = "xtensa")]
-        let tcp_client = self.tcp_client;
+        let http_client_mutex = self.http_client_mutex;
 
         // Reuse existing REQ_BUFFER
         #[cfg(target_arch = "xtensa")]
@@ -149,9 +145,7 @@ impl AppBuilder for AppProps {
                     >| async move {
                         #[cfg(target_arch = "xtensa")]
                         return fetch_domain_endpoint(
-                            tls_mutex,
-                            dns_socket,
-                            tcp_client,
+                            http_client_mutex,
                             &body.url,
                             req_buffer_mutex,
                         )
@@ -170,9 +164,7 @@ impl AppBuilder for AppProps {
                         #[cfg(target_arch = "xtensa")]
                         {
                             return check_caldav_credentials(
-                                tls_mutex,
-                                dns_socket,
-                                tcp_client,
+                                http_client_mutex,
                                 req_buffer_mutex,
                                 &credentials,
                             )
@@ -199,9 +191,7 @@ impl AppBuilder for AppProps {
                             .ok_or(AppError::Storage(storage::StorageError::ReadError))?;
 
                         return fetch_calendars(
-                            tls_mutex,
-                            dns_socket,
-                            tcp_client,
+                            http_client_mutex,
                             &nvs.url,
                             req_buffer_mutex,
                             &nvs,
@@ -217,16 +207,13 @@ impl AppBuilder for AppProps {
 }
 
 async fn fetch_domain_endpoint(
-    #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
+    #[cfg(target_arch = "xtensa")] http_client_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
-        &'static mut mbedtls_rs::Tls<'static>,
-    >,
-    #[cfg(target_arch = "xtensa")] dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
-    #[cfg(target_arch = "xtensa")] tcp_client: &'static embassy_net::tcp::client::TcpClient<
-        'static,
-        1,
-        4096,
-        4096,
+        reqwless::client::HttpClient<
+            'static,
+            embassy_net::tcp::client::TcpClient<'static, 1, 4096, 4096>,
+            embassy_net::dns::DnsSocket<'static>,
+        >,
     >,
     #[cfg(target_arch = "xtensa")] body: &str,
     #[cfg(not(target_arch = "xtensa"))] body: &str,
@@ -239,14 +226,10 @@ async fn fetch_domain_endpoint(
     {
         let mut buf_guard = req_buffer_mutex.lock().await;
 
-        let tls = tls_mutex.lock().await;
-        let tls_reference = tls.reference();
-
-        let mut client =
-            crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
+        let mut client = http_client_mutex.lock().await;
 
         let endpoint =
-            crate::networking::fetch_domain_endpoint(&mut client, body, *buf_guard).await;
+            crate::networking::fetch_domain_endpoint(&mut *client, body, *buf_guard).await;
         match endpoint {
             Some(url) => Ok(picoserve::response::json::Json(EndpointResponse {
                 endpoint: url,
@@ -266,16 +249,13 @@ async fn fetch_domain_endpoint(
 }
 
 async fn fetch_calendars(
-    #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
+    #[cfg(target_arch = "xtensa")] http_client_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
-        &'static mut mbedtls_rs::Tls<'static>,
-    >,
-    #[cfg(target_arch = "xtensa")] dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
-    #[cfg(target_arch = "xtensa")] tcp_client: &'static embassy_net::tcp::client::TcpClient<
-        'static,
-        1,
-        4096,
-        4096,
+        reqwless::client::HttpClient<
+            'static,
+            embassy_net::tcp::client::TcpClient<'static, 1, 4096, 4096>,
+            embassy_net::dns::DnsSocket<'static>,
+        >,
     >,
     #[cfg(target_arch = "xtensa")] body: &str,
     #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
@@ -288,18 +268,14 @@ async fn fetch_calendars(
     {
         let mut buf_guard = req_buffer_mutex.lock().await;
 
-        let tls = tls_mutex.lock().await;
-        let tls_reference = tls.reference();
-
-        let mut client =
-            crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
+        let mut client = http_client_mutex.lock().await;
 
         let res =
-            crate::networking::fetch_principal_url(&mut client, body, credentials, *buf_guard)
+            crate::networking::fetch_principal_url(&mut *client, body, credentials, *buf_guard)
                 .await
                 .ok_or(crate::networking::NetworkError::ParsingError)?;
         let home = crate::networking::fetch_calendar_home_set(
-            &mut client,
+            &mut *client,
             body,
             &res,
             credentials,
@@ -308,7 +284,7 @@ async fn fetch_calendars(
         .await
         .ok_or(crate::networking::NetworkError::ParsingError)?;
         let calendars =
-            crate::networking::fetch_calendars(&mut client, body, &home, credentials, *buf_guard)
+            crate::networking::fetch_calendars(&mut *client, body, &home, credentials, *buf_guard)
                 .await;
         Ok(picoserve::response::json::Json(calendars))
     }
@@ -323,16 +299,13 @@ async fn fetch_calendars(
 }
 
 async fn check_caldav_credentials(
-    #[cfg(target_arch = "xtensa")] tls_mutex: &'static embassy_sync::mutex::Mutex<
+    #[cfg(target_arch = "xtensa")] http_client_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
-        &'static mut mbedtls_rs::Tls<'static>,
-    >,
-    #[cfg(target_arch = "xtensa")] dns_socket: &'static embassy_net::dns::DnsSocket<'static>,
-    #[cfg(target_arch = "xtensa")] tcp_client: &'static embassy_net::tcp::client::TcpClient<
-        'static,
-        1,
-        4096,
-        4096,
+        reqwless::client::HttpClient<
+            'static,
+            embassy_net::tcp::client::TcpClient<'static, 1, 4096, 4096>,
+            embassy_net::dns::DnsSocket<'static>,
+        >,
     >,
     #[cfg(target_arch = "xtensa")] req_buffer_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
@@ -345,11 +318,7 @@ async fn check_caldav_credentials(
     {
         let mut buf_guard = req_buffer_mutex.lock().await;
 
-        let tls = tls_mutex.lock().await;
-        let tls_reference = tls.reference();
-
-        let mut client =
-            crate::networking::init_https_client(tcp_client, dns_socket, tls_reference);
+        let mut client = http_client_mutex.lock().await;
 
         let url_str = credentials.url.as_str();
         let uri = fluent_uri::Uri::parse(url_str)
@@ -361,7 +330,7 @@ async fn check_caldav_credentials(
         let path = uri.path().as_str();
 
         crate::networking::check_credentials(
-            &mut client,
+            &mut *client,
             &origin,
             if path.is_empty() { "/" } else { path },
             credentials,

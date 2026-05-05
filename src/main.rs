@@ -60,8 +60,15 @@ pub static BOOT_TYPES: AtomicU8 = AtomicU8::new(BootType::Display as u8);
 pub static NETWORK_FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
 
 static TLS: static_cell::StaticCell<mbedtls_rs::Tls<'static>> = static_cell::StaticCell::new();
-static TLS_MUTEX: static_cell::StaticCell<
-    embassy_sync::mutex::Mutex<NoopRawMutex, &'static mut mbedtls_rs::Tls<'static>>,
+static HTTP_CLIENT_MUTEX: static_cell::StaticCell<
+    embassy_sync::mutex::Mutex<
+        NoopRawMutex,
+        reqwless::client::HttpClient<
+            'static,
+            TcpClient<'static, 1, 4096, 4096>,
+            DnsSocket<'static>,
+        >,
+    >,
 > = static_cell::StaticCell::new();
 static DNS_SOCKET: static_cell::StaticCell<DnsSocket<'static>> = static_cell::StaticCell::new();
 static TCP_CLIENT: static_cell::StaticCell<TcpClient<'static, 1, 4096, 4096>> =
@@ -345,15 +352,8 @@ async fn run_display_mode(
                 .init_with(embassy_net::tcp::client::TcpClientState::new),
         )
     });
-    let mut events = networking::get_events(
-        tls.reference(),
-        dns_socket,
-        tcp_client,
-        rtc,
-        &caldav,
-        calendars,
-    )
-    .await;
+    let mut client = networking::init_https_client(tcp_client, dns_socket, tls.reference());
+    let mut events = networking::get_events(&mut client, rtc, &caldav, calendars).await;
 
     join(
         crate::wifi::stop_wifi(),
@@ -371,8 +371,6 @@ fn run_config_mode(
     #[allow(clippy::large_stack_frames, reason = "false positive")]
     let tls = TLS.init_with(|| mbedtls_rs::Tls::new(trng).unwrap());
     #[allow(clippy::large_stack_frames, reason = "false positive")]
-    let tls_mutex = TLS_MUTEX.init_with(|| embassy_sync::mutex::Mutex::new(tls));
-    #[allow(clippy::large_stack_frames, reason = "false positive")]
     let dns_socket = DNS_SOCKET.init_with(|| DnsSocket::new(net_stack));
     #[allow(clippy::large_stack_frames, reason = "false positive")]
     let tcp_client = TCP_CLIENT.init_with(|| {
@@ -383,14 +381,17 @@ fn run_config_mode(
                 .init_with(embassy_net::tcp::client::TcpClientState::new),
         )
     });
+    #[allow(clippy::large_stack_frames, reason = "false positive")]
+    let http_client_mutex = HTTP_CLIENT_MUTEX.init_with(|| {
+        let client = networking::init_https_client(tcp_client, dns_socket, tls.reference());
+        embassy_sync::mutex::Mutex::new(client)
+    });
 
     let app = picoserve::make_static!(
         picoserve::AppRouter<server::AppProps>,
         server::AppProps {
             flash_storage: flash,
-            tls_mutex,
-            dns_socket,
-            tcp_client,
+            http_client_mutex,
         }
         .build_app()
     );

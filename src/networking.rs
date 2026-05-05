@@ -311,9 +311,7 @@ async fn req(
 
 // todo pass http client
 pub(crate) async fn get_events(
-    tls_ref: reqwless::TlsReference<'_>,
-    dns_socket: &'_ DnsSocket<'_>,
-    tcp: &TcpClient<'_, 1, 4096, 4096>,
+    client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     credentials: &CaldavCreds,
     calendar_ids: &[String],
@@ -325,14 +323,12 @@ pub(crate) async fn get_events(
         jiff::Timestamp::from_second(rtc.current_time_us() as i64 / 1_000_000).unwrap();
     let tzed = time_from_rtc.to_zoned(USER_TIMEZONE);
 
-    let mut client = init_https_client(tcp, dns_socket, tls_ref);
-
     let mut resp = alloc::vec![];
     let mut success = false;
     for tries in 1..=3 {
         req_buffer.fill(0);
         let req = crate::networking::calendar_data_req(
-            &mut client,
+            client,
             &tzed,
             req_buffer,
             credentials,
