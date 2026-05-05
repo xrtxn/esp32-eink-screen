@@ -4344,6 +4344,7 @@ dependencies = [
  "serde",
  "smoltcp",
  "static_cell",
+ "thiserror 2.0.18",
  "tokio",
  "vcal-parser",
  "vergen",

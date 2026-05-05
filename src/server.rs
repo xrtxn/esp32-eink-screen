@@ -82,6 +82,7 @@ impl AppBuilder for AppProps {
                     move |picoserve::extract::Json(resp_wifi): picoserve::extract::Json<
                         storage::WifiCreds,
                     >| async move {
+                        #[cfg(feature = "defmt")]
                         crate::defmt::info!("Received config change request: {:?}", resp_wifi);
 
                         #[cfg(target_arch = "xtensa")]
@@ -270,22 +271,27 @@ async fn fetch_calendars(
 
         let mut client = http_client_mutex.lock().await;
 
-        let res =
+        let principal_url =
             crate::networking::fetch_principal_url(&mut *client, body, credentials, *buf_guard)
                 .await
                 .ok_or(crate::networking::NetworkError::ParsingError)?;
-        let home = crate::networking::fetch_calendar_home_set(
+        let calendar_home = crate::networking::fetch_calendar_home_set(
             &mut *client,
             body,
-            &res,
+            &principal_url,
             credentials,
             *buf_guard,
         )
         .await
         .ok_or(crate::networking::NetworkError::ParsingError)?;
-        let calendars =
-            crate::networking::fetch_calendars(&mut *client, body, &home, credentials, *buf_guard)
-                .await;
+        let calendars = crate::networking::fetch_calendars(
+            &mut *client,
+            body,
+            &calendar_home,
+            credentials,
+            *buf_guard,
+        )
+        .await;
         Ok(picoserve::response::json::Json(calendars))
     }
     #[cfg(not(target_arch = "xtensa"))]
@@ -386,12 +392,17 @@ async fn save_caldav_handler(
     >,
     picoserve::extract::Json(resp_caldav): picoserve::extract::Json<storage::CaldavCreds>,
 ) -> impl picoserve::response::IntoResponse {
+    #[cfg(feature = "defmt")]
     crate::defmt::info!("Received config change request: {:?}", resp_caldav);
 
     let url = fluent_uri::Uri::parse(resp_caldav.url.as_str());
     match url {
-        Ok(res) => crate::defmt::info!("Parsed URL: {}", res.as_str()),
+        Ok(res) => {
+            #[cfg(feature = "defmt")]
+            crate::defmt::info!("Parsed URL: {}", res.as_str());
+        }
         Err(err) => {
+            #[cfg(feature = "defmt")]
             crate::defmt::error!("Failed to parse URL: {}", crate::defmt::Debug2Format(&err));
             return picoserve::response::StatusCode::BAD_REQUEST;
         }

@@ -40,11 +40,13 @@ pub(crate) async fn init_display(
     let cs = Output::new(cs_pin, Level::High, OutputConfig::default());
 
     crate::defmt::info!("Initializing SPI Device...");
-    let spi_device = ExclusiveDevice::new(spi_bus, cs, embassy_time::Delay).expect("SPI device initialize error");
+    let spi_device = ExclusiveDevice::new(spi_bus, cs, embassy_time::Delay)
+        .expect("SPI device initialize error");
     let spi_interface = SPIInterface::new(spi_device, dc);
 
     crate::defmt::info!("Initializing EPD...");
-    let mut driver = WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, embassy_time::Delay);
+    let mut driver =
+        WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, embassy_time::Delay);
     let mut display = Display420BlackWhite::new();
     // set it to be longer not wider
     display.set_rotation(DisplayRotation::Rotate270);

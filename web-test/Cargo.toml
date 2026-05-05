@@ -23,6 +23,7 @@ env_logger = "0.11.9"
 fluent-uri = { version = "0.4.1" }
 vcal-parser = { path = "../vcal-parser" }
 defmt = "1.0.1"
+thiserror = { version = "2.0.18" }
 
 [build-dependencies]
 vergen = { version = "9.0.6", features = ["build"] }
