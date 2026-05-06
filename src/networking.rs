@@ -228,7 +228,6 @@ pub async fn calendar_data_req(
     )
     .unwrap();
 
-    // todo remove from prod
     let url = creds.url.as_str();
     let username = creds.username.as_str();
     let password = creds.password.as_str();
@@ -263,7 +262,7 @@ pub async fn calendar_data_req(
         );
         crate::defmt::debug!("request path: {}", path);
 
-        let vec = req(
+        let vec = calendar_data_processor(
             client,
             &origin,
             &path,
@@ -279,7 +278,7 @@ pub async fn calendar_data_req(
     all_cals
 }
 
-async fn req(
+async fn calendar_data_processor(
     client: &mut HttpClient<'_, TcpClient<'_, 1, 4096, 4096>, DnsSocket<'_>>,
     origin: &str,
     path: &str,

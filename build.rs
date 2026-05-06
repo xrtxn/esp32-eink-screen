@@ -6,6 +6,7 @@ use vergen::{BuildBuilder, Emitter};
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let mut workspace_dir = std::path::PathBuf::from(manifest_dir);
+    // if we're in a workspace, we want to be in the workspace root
     if !workspace_dir.join("web").exists() {
         workspace_dir.pop();
     }
@@ -73,7 +74,7 @@ fn build_index_html() {
     Command::new("gzip")
         .args(["-9", "-k", &out_html])
         .status()
-        .expect("Failed to gzip credentials.html — is gzip installed?");
+        .expect("Failed to gzip credentials.html - is gzip installed?");
 
     let gz_len = std::fs::metadata(&out_gz)
         .expect("Failed to stat gzipped credentials.html")
@@ -116,7 +117,7 @@ fn build_display_html() {
     Command::new("gzip")
         .args(["-9", "-k", &out_html])
         .status()
-        .expect("Failed to gzip calendar-config.html — is gzip installed?");
+        .expect("Failed to gzip calendar-config.html - is gzip installed?");
 
     let gz_len = std::fs::metadata(&out_gz)
         .expect("Failed to stat gzipped calendar-config.html")
