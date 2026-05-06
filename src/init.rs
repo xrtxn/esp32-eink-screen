@@ -10,8 +10,8 @@ use esp_hal::{
     },
     time::Rate,
 };
-use weact_studio_epd::WeActStudio420BlackWhiteDriver;
-use weact_studio_epd::graphics::{Display420BlackWhite, DisplayRotation};
+use weact_studio_epd::WeActStudio370BlackWhiteDriver;
+use weact_studio_epd::graphics::{Display370BlackWhite, DisplayRotation};
 
 pub(crate) async fn init_display(
     sclk_pin: impl OutputPin + 'static,
@@ -21,7 +21,7 @@ pub(crate) async fn init_display(
     rst_pin: impl OutputPin + 'static,
     busy_pin: impl InputPin + 'static,
     cs_pin: impl OutputPin + 'static,
-) -> (Display420BlackWhite, crate::EpdDriver) {
+) -> (Display370BlackWhite, crate::EpdDriver) {
     let spi_bus = Spi::new(
         spi_pin,
         Config::default()
@@ -46,10 +46,10 @@ pub(crate) async fn init_display(
 
     crate::defmt::info!("Initializing EPD...");
     let mut driver =
-        WeActStudio420BlackWhiteDriver::new(spi_interface, busy, rst, embassy_time::Delay);
-    let mut display = Display420BlackWhite::new();
+        WeActStudio370BlackWhiteDriver::new(spi_interface, busy, rst, embassy_time::Delay);
+    let mut display = Display370BlackWhite::new();
     // set it to be longer not wider
-    display.set_rotation(DisplayRotation::Rotate270);
+    display.set_rotation(DisplayRotation::Rotate180);
     driver.init().await.unwrap();
     crate::defmt::info!("EPD initialized!");
     (display, driver)

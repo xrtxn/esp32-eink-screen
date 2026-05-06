@@ -916,7 +916,7 @@ dependencies = [
  "profont",
  "vcal-parser",
  "vergen",
- "weact-studio-epd",
+ "weact-studio-epd 0.1.2 (git+https://github.com/xrtxn/weact-studio-epd.git?branch=feat%2F4.2_support)",
 ]
 
 [[package]]
@@ -1894,7 +1894,7 @@ dependencies = [
  "thiserror 2.0.18",
  "vcal-parser",
  "vergen",
- "weact-studio-epd",
+ "weact-studio-epd 0.1.2",
 ]
 
 [[package]]
@@ -4355,6 +4355,18 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "semver",
+]
+
+[[package]]
+name = "weact-studio-epd"
+version = "0.1.2"
+dependencies = [
+ "display-interface",
+ "embedded-graphics",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "maybe-async-cfg",
+ "sealed",
 ]
 
 [[package]]

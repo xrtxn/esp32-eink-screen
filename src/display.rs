@@ -12,8 +12,8 @@ use weact_studio_epd::Color as EpdColor;
 use crate::defmt::info;
 
 #[allow(dead_code)]
-pub const DISPLAY_WIDTH: u32 = 300;
-pub const DISPLAY_HEIGHT: u32 = 400;
+pub const DISPLAY_WIDTH: u32 = 240;
+pub const DISPLAY_HEIGHT: u32 = 416;
 const EXTRA_BOTTOM_SPACE: i32 = 15;
 const EVENT_FONT: MonoFont = profont::PROFONT_10_POINT;
 const MINI_FONT: MonoFont = profont::PROFONT_7_POINT;
@@ -551,15 +551,14 @@ pub mod xtensa {
     use embedded_hal::digital::OutputPin as EhalOutputPin;
     use embedded_hal_async::{delay::DelayNs, digital::Wait};
     use esp_hal::rtc_cntl::Rtc;
-    use weact_studio_epd::WeActStudio420BlackWhiteDriver;
-    pub use weact_studio_epd::graphics::Display420BlackWhite;
+    use weact_studio_epd::{WeActStudio370BlackWhiteDriver, graphics::Display370BlackWhite};
 
     use super::draw_event;
     use crate::hardware;
 
     pub(crate) async fn write_to_screen<DI, BSY, RST, DELAY>(
-        display: &mut Display420BlackWhite,
-        driver: &mut WeActStudio420BlackWhiteDriver<DI, BSY, RST, DELAY>,
+        display: &mut Display370BlackWhite,
+        driver: &mut WeActStudio370BlackWhiteDriver<DI, BSY, RST, DELAY>,
         events: &mut [vcal_parser::vevent::VEventData],
         rtc: &mut Rtc<'_>,
     ) where

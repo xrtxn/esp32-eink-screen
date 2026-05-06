@@ -41,8 +41,8 @@ use esp_storage::FlashStorage;
 //use mbedtls_rs::sys::hook::backend::esp::EspAccel;
 use picoserve::AppBuilder;
 use portable_atomic::{AtomicU8, AtomicU32};
-use weact_studio_epd::WeActStudio420BlackWhiteDriver;
-use weact_studio_epd::graphics::Display420BlackWhite;
+use weact_studio_epd::WeActStudio370BlackWhiteDriver;
+use weact_studio_epd::graphics::Display370BlackWhite;
 
 use crate::server::{NetworkStatus, WEB_TASK_POOL_SIZE, web_task};
 use crate::storage::NvsConfig;
@@ -75,7 +75,7 @@ static DNS_SOCKET: static_cell::StaticCell<DnsSocket<'static>> = static_cell::St
 static TCP_CLIENT: static_cell::StaticCell<TcpClient<'static, 1, 4096, 4096>> =
     static_cell::StaticCell::new();
 
-type EpdDriver = WeActStudio420BlackWhiteDriver<
+type EpdDriver = WeActStudio370BlackWhiteDriver<
     SPIInterface<
         ExclusiveDevice<Spi<'static, esp_hal::Async>, Output<'static>, Delay>,
         Output<'static>,
@@ -335,7 +335,7 @@ async fn run_display_mode(
     rtc: &mut esp_hal::rtc_cntl::Rtc<'_>,
     net_stack: embassy_net::Stack<'static>,
     trng: &'static mut esp_hal::rng::Trng,
-    display: &mut Display420BlackWhite,
+    display: &mut Display370BlackWhite,
     driver: &mut EpdDriver,
     config: &NvsConfig,
     calendars: &[alloc::string::String],
