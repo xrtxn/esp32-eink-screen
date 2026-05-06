@@ -1,5 +1,5 @@
-use std::env;
 use std::process::Command;
+use std::{env, fs};
 
 use vergen::{BuildBuilder, Emitter};
 
@@ -39,90 +39,68 @@ fn main() {
     }
 }
 
-fn build_index_html() {
-    println!("cargo:rerun-if-changed=web/credentials.html");
+fn build_html(source_html: &str, favicon_path: &str, output_name: &str, env_var_name: &str) {
+    println!("cargo:rerun-if-changed={source_html}");
     println!("cargo:rerun-if-changed=web/static/pico.min.css");
-    println!("cargo:rerun-if-changed=web/credentials-favicon.svg");
+    println!("cargo:rerun-if-changed={favicon_path}");
 
-    let html = std::fs::read_to_string("web/credentials.html")
-        .expect("Failed to read web/credentials.html");
-    let css = std::fs::read_to_string("web/static/pico.min.css")
+    let html =
+        fs::read_to_string(source_html).unwrap_or_else(|_| panic!("Failed to read {source_html}"));
+    let css = fs::read_to_string("web/static/pico.min.css")
         .expect("Failed to read web/static/pico.min.css");
-    let favicon = std::fs::read("web/credentials-favicon.svg").expect("Failed to read");
+    let favicon =
+        fs::read(favicon_path).unwrap_or_else(|_| panic!("Failed to read {favicon_path}"));
 
     use base64::prelude::*;
-    let favicon_base64 = BASE64_STANDARD.encode(&favicon);
-
-    // Replace the placeholder for css and favicon
     let final_html = html
         .lines()
         .filter(|line| !line.contains(r#"link rel="stylesheet""#))
-        .collect::<Vec<&str>>()
+        .collect::<Vec<_>>()
         .join("\n")
         .replace("/* CSS_PLACEHOLDER */", &css)
-        .replace("/* FAVICON_PLACEHOLDER */", &favicon_base64);
+        .replace(
+            "/* FAVICON_PLACEHOLDER */",
+            &BASE64_STANDARD.encode(favicon),
+        );
 
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let out_html = format!("{out_dir}/credentials.html");
-    let out_gz = format!("{out_dir}/credentials.html.gz");
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
+    let out_html = format!("{out_dir}/{output_name}");
+    let out_gz = format!("{out_html}.gz");
 
-    std::fs::write(&out_html, final_html.as_bytes())
-        .expect("Failed to write built credentials.html");
+    fs::write(&out_html, final_html).unwrap_or_else(|_| {
+        panic!("Failed to write built {output_name}");
+    });
 
-    let _ = std::fs::remove_file(&out_gz);
+    let _ = fs::remove_file(&out_gz);
 
     Command::new("gzip")
         .args(["-9", "-k", &out_html])
         .status()
-        .expect("Failed to gzip credentials.html - is gzip installed?");
+        .unwrap_or_else(|_| panic!("Failed to gzip {output_name}"));
 
-    let gz_len = std::fs::metadata(&out_gz)
-        .expect("Failed to stat gzipped credentials.html")
+    let gz_len = fs::metadata(&out_gz)
+        .unwrap_or_else(|_| panic!("Failed to stat gzipped {output_name}"))
         .len();
-    println!("cargo:rustc-env=INDEX_HTML_GZ_LEN={gz_len}");
+
+    println!("cargo:rustc-env={env_var_name}={gz_len}");
+}
+
+fn build_index_html() {
+    build_html(
+        "web/credentials.html",
+        "web/credentials-favicon.svg",
+        "credentials.html",
+        "INDEX_HTML_GZ_LEN",
+    );
 }
 
 fn build_display_html() {
-    println!("cargo:rerun-if-changed=web/calendar-config.html");
-    println!("cargo:rerun-if-changed=web/static/pico.min.css");
-    println!("cargo:rerun-if-changed=web/calendar-favicon.svg");
-
-    let html = std::fs::read_to_string("web/calendar-config.html")
-        .expect("Failed to read web/calendar-config.html");
-    let css = std::fs::read_to_string("web/static/pico.min.css")
-        .expect("Failed to read web/static/pico.min.css");
-    let favicon = std::fs::read("web/calendar-favicon.svg").expect("Failed to read favicon");
-
-    use base64::prelude::*;
-    let favicon_base64 = BASE64_STANDARD.encode(&favicon);
-
-    // Replace the placeholder for css and favicon
-    let final_html = html
-        .lines()
-        .filter(|line| !line.contains(r#"link rel="stylesheet""#))
-        .collect::<Vec<&str>>()
-        .join("\n")
-        .replace("/* CSS_PLACEHOLDER */", &css)
-        .replace("/* FAVICON_PLACEHOLDER */", &favicon_base64);
-
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let out_html = format!("{out_dir}/calendar-config.html");
-    let out_gz = format!("{out_dir}/calendar-config.html.gz");
-
-    std::fs::write(&out_html, final_html.as_bytes())
-        .expect("Failed to write built calendar-config.html");
-
-    let _ = std::fs::remove_file(&out_gz);
-
-    Command::new("gzip")
-        .args(["-9", "-k", &out_html])
-        .status()
-        .expect("Failed to gzip calendar-config.html - is gzip installed?");
-
-    let gz_len = std::fs::metadata(&out_gz)
-        .expect("Failed to stat gzipped calendar-config.html")
-        .len();
-    println!("cargo:rustc-env=DISPLAY_HTML_GZ_LEN={gz_len}");
+    build_html(
+        "web/calendar-config.html",
+        "web/calendar-favicon.svg",
+        "calendar-config.html",
+        "DISPLAY_HTML_GZ_LEN",
+    );
 }
 
 fn linker_be_nice() {
