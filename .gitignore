@@ -17,3 +17,4 @@ target/
 /.direnv
 **/*.env
 web/static/pico*
+/nvim.log

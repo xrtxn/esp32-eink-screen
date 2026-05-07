@@ -600,7 +600,7 @@ pub mod xtensa {
         #[cfg(debug_assertions)]
         crate::display::add_footer_info(display);
 
-        if super::limit_to_today() {
+        if !super::limit_to_today() {
             crate::display::draw_time_ticker(display, &time, start_display_hour);
         }
         crate::display::draw_sync_time(display, &time);
