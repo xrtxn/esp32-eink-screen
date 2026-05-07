@@ -191,14 +191,14 @@ async fn main(spawner: Spawner) {
             Some(config) => config,
             _ => {
                 BootType::set(BootType::Config);
-                crate::wifi::stop_wifi_and_reset().await;
+                crate::wifi::stop_wifi_and_reset().await
             }
         };
 
         if config.wifi.is_none() || config.caldav.is_none() {
             crate::defmt::warn!("Missing credentials (wifi or caldav), rebooting into config mode");
             BootType::set(BootType::Config);
-            crate::wifi::stop_wifi_and_reset().await;
+            crate::wifi::stop_wifi_and_reset().await
         }
 
         let wifi_creds = config.wifi.clone().unwrap();
