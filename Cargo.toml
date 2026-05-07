@@ -72,7 +72,7 @@ critical-section = "1.2.0"
 portable-atomic = { version = "1", features = ["critical-section"] }
 static_cell = { version = "2.1.1", features = ["nightly"] }
 
-weact-studio-epd = { path = "/archive/docs/thesis/TDK/3.7/weact-studio-epd/", features = ["uc8253"] }
+weact-studio-epd = { git = "https://github.com/xrtxn/uc-weact-studio-epd.git", branch="uc8253", features = ["uc8253"] }
 embedded-hal-async = "1.0.0"
 embedded-graphics = "0.8.1"
 profont = "0.7.0"

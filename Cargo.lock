@@ -1894,7 +1894,7 @@ dependencies = [
  "thiserror 2.0.18",
  "vcal-parser",
  "vergen",
- "weact-studio-epd 0.1.2",
+ "weact-studio-epd 0.1.2 (git+https://github.com/xrtxn/uc-weact-studio-epd.git?branch=uc8253)",
 ]
 
 [[package]]
@@ -4360,6 +4360,7 @@ dependencies = [
 [[package]]
 name = "weact-studio-epd"
 version = "0.1.2"
+source = "git+https://github.com/xrtxn/weact-studio-epd.git?branch=feat%2F4.2_support#52a1204deab85a80f50c236d6b84cdd7f237340a"
 dependencies = [
  "display-interface",
  "embedded-graphics",
@@ -4372,7 +4373,7 @@ dependencies = [
 [[package]]
 name = "weact-studio-epd"
 version = "0.1.2"
-source = "git+https://github.com/xrtxn/weact-studio-epd.git?branch=feat%2F4.2_support#52a1204deab85a80f50c236d6b84cdd7f237340a"
+source = "git+https://github.com/xrtxn/uc-weact-studio-epd.git?branch=uc8253#3c9cd97dba036c948832698f1da1606b552ecdfb"
 dependencies = [
  "display-interface",
  "embedded-graphics",
