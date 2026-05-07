@@ -91,13 +91,17 @@ pub async fn sync_time(
     // The RTC clock drifts, so every 5th boot we resync it with the NTP time.
     if prev_boot_count.is_multiple_of(5) || need_initial_sync {
         crate::defmt::info!("Syncing RTC with NTP (boot {})", prev_boot_count + 1);
-        let time = get_time(stack).await;
-        // set_current_time_us expects microseconds
-        rtc.set_current_time_us(
-            (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
-        );
-        if need_initial_sync {
-            INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
+        if let Ok(time) =
+            embassy_time::with_timeout(embassy_time::Duration::from_secs(5), get_time(stack)).await
+        {
+            rtc.set_current_time_us(
+                (time.as_second() as u64 * 1_000_000) + (time.subsec_microsecond() as u64),
+            );
+            if need_initial_sync {
+                INITIAL_NTP_SYNC.store(1, core::sync::atomic::Ordering::Relaxed);
+            }
+        } else {
+            crate::defmt::warn!("NTP sync timed out, skipping for this boot");
         }
     }
 }
