@@ -25,6 +25,11 @@ rtc_fast_seg = 0x600fe000 ~ 0x60100000 = 8192 bytes = 8 kb
 rtc_slow_seg = 0x50000000 ~ 0x50002000 = 8192 bytes = 8 kb  
 Mac: dc:da:0c:29:d3:c0
 
+|BUSY|RES|D/C|CS|SCL|SDA|GND|VCC|
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+|15|4|18|10|12|11|X|X|
+|Purple|Orange|White|Blue|Green|Yellow|Black|Red|
+
 ## Setup
 
 You will need a linux distribution with nix installed.  
