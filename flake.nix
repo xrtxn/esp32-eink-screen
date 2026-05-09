@@ -41,7 +41,6 @@
               pkgs.rust-analyzer
               pkgs.pkg-config
               pkgs.stdenv.cc
-              pkgs.systemdMinimal
 
               pkgs.cargo-bloat
               pkgs.SDL2
@@ -55,6 +54,9 @@
               # Add a prefix to the shell prompt
               export PS1="(esp-rs)$PS1"
 
+              export AP_SSID="Thesis-MM"
+              export AP_PASS="Thesis2026"
+
               # This variable is important - it tells rustup where to find the esp toolchain,
               # without needing to copy it into your local ~/.rustup/ folder.
               export RUSTUP_TOOLCHAIN=${esp-rs}
@@ -64,6 +66,14 @@
 
               # Override where Cargo looks for stdlib sources (needed for build-std)
               export __CARGO_TESTS_ONLY_SRC_ROOT=${esp-rs}/lib/rustlib/src/rust/library
+
+              # Fetch Pico CSS if not already present
+              if [ ! -f web/static/pico.min.css ]; then
+                mkdir -p web/static
+                ${pkgs.curl}/bin/curl -fsSL \
+                  https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css \
+                  -o web/static/pico.min.css
+              fi
             '';
           };
         }
