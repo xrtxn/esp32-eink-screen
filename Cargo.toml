@@ -97,7 +97,7 @@ sntpc = { version = "0.8", default-features = false }
 sntpc-net-embassy = "0.8"
 
 # Web server
-picoserve = { version = "=0.18.0", features = ["embassy",  "alloc", "json"] }
+picoserve = { version = "=0.18.0", features = ["embassy", "alloc", "json"] }
 
 # DHCP server (for AP mode)
 edge-dhcp = { version = "0.7", features = [] }
